@@ -14,19 +14,23 @@ logger = structlog.get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown."""
-    logger.info("initializing database")
-    await init_db()
-    logger.info("database ready")
+    try:
+        logger.info("initializing database")
+        await init_db()
+        logger.info("database ready")
+    except Exception as e:
+        logger.error("database_init_failed", error=str(e))
+        logger.warning("Application started in recovery mode. DB queries will retry on request.")
 
     # Flush answer cache on startup (ensures fresh state after code updates)
     try:
         import redis
         from src.config.settings import settings
-        r = redis.from_url(settings.redis_url)
-        # Only flush answer cache keys, not embedding cache
-        for key in r.scan_iter("ans:*"):
-            r.delete(key)
-        logger.info("answer_cache_flushed_on_startup")
+        if settings.redis_url and "localhost" not in settings.redis_url:
+            r = redis.from_url(settings.redis_url)
+            for key in r.scan_iter("ans:*"):
+                r.delete(key)
+            logger.info("answer_cache_flushed_on_startup")
     except Exception as e:
         logger.warning("redis_flush_failed", error=str(e))
 
