@@ -47,6 +47,3 @@ google-auth>=2.29.0
 # MCP Server
 mcp>=1.0.0,<2.0.0
 duckduckgo-search>=6.0.0
-
-# Hugging Face Space Compatibility
-gradio>=4.44.0
