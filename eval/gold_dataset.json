@@ -1,0 +1,27 @@
+[
+  {
+    "question": "What features are planned for removal in 2026?",
+    "ground_truth": "Uncore PMI. IA32_DEBUGCTL MSR, bit 13 (MSR address 1D9H) is planned for removal from 2026 onwards.",
+    "expected_keywords": ["Uncore PMI", "IA32_DEBUGCTL", "2026"]
+  },
+  {
+    "question": "What is the removal year for xAPIC mode?",
+    "ground_truth": "xAPIC mode is planned for removal from 2025 onwards.",
+    "expected_keywords": ["xAPIC", "2025"]
+  },
+  {
+    "question": "Which features were removed in 2019?",
+    "ground_truth": "Intel Memory Protection Extensions (Intel MPX), MSR_TEST_CTRL bit 31 (MSR address 33H), and Hardware Lock Elision (HLE) were removed from 2019 onwards.",
+    "expected_keywords": ["Intel MPX", "MSR_TEST_CTRL", "HLE", "2019"]
+  },
+  {
+    "question": "What is Sub-page write permissions for EPT removal year?",
+    "ground_truth": "Sub-page write permissions for EPT is planned for removal from 2024 onwards.",
+    "expected_keywords": ["Sub-page", "EPT", "2024"]
+  },
+  {
+    "question": "What is Key Locker removal year?",
+    "ground_truth": "Key Locker is planned for removal from 2025 onwards.",
+    "expected_keywords": ["Key Locker", "2025"]
+  }
+]

@@ -1,0 +1,25 @@
+[project]
+name = "genai-project-chat"
+version = "1.0.0"
+description = "Production-grade multi-agent chatbot with Gemini Flash, LangGraph, MCP, FastAPI, and Streamlit"
+requires-python = ">=3.11"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = ["E501"]
+
+[tool.pyright]
+venvPath = "."
+venv = "venv"
+pythonVersion = "3.11"
+executionEnvironments = [
+    { root = ".", extraPaths = ["."] }
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
