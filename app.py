@@ -44,37 +44,16 @@ if __name__ == "__main__":
         logger.error("database_init_failed", error=str(e))
 
     # Launch Gradio server
-    try:
-        demo.launch(
-            server_name="0.0.0.0",
-            server_port=port,
-            show_error=True,
-            ssr_mode=False,
-            prevent_thread_lock=False,
-        )
-    except TypeError:
-        try:
-            demo.launch(
-                server_name="0.0.0.0",
-                server_port=port,
-                show_error=True,
-                ssr=False,
-                prevent_thread_lock=False,
-            )
-        except TypeError:
-            demo.launch(
-                server_name="0.0.0.0",
-                server_port=port,
-                show_error=True,
-                prevent_thread_lock=False,
-            )
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=port,
+        show_error=True,
+        ssr_mode=False,
+    )
 
-    # Keep process alive
-    try:
-        demo.block()
-    except Exception:
-        while True:
-            time.sleep(3600)
+    # Unconditional keep-alive loop so the container process never terminates
+    while True:
+        time.sleep(3600)
 
 
 
