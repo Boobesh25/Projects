@@ -25,7 +25,8 @@ app = gr.mount_gradio_app(fastapi_app, ui_demo, path="/ui")
 if __name__ == "__main__":
     # Prevent ZeroGPU spawned subprocesses from duplicate port bindings
     if multiprocessing.current_process().name == "MainProcess":
-        port = int(os.environ.get("PORT", 7860))
+        # Port 7860 is the standard HF space application port (7861 is used internally by HF proxy)
+        port = 7860
         logger.info("starting_fastapi_server", port=port)
         uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
 
