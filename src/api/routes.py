@@ -198,8 +198,8 @@ async def delete_user_api_key_endpoint(user_id: str):
 
 @router.post("/auth/google/callback")
 async def google_callback(
+    request: Request,
     credential: str = Form(...),
-    redirect_to: str = "",
 ):
     """
     Google redirects here after sign-in (ux_mode=redirect).
@@ -207,12 +207,15 @@ async def google_callback(
     """
     from fastapi.responses import RedirectResponse
 
-    # Determine frontend target
-    target = redirect_to or settings.frontend_url or "http://localhost:8501"
+    # Determine frontend target from cookie or configured settings
+    target = request.cookies.get("oauth_redirect_to") or settings.frontend_url or "https://projects-bu8jtjbtyqe7otklpukvoq.streamlit.app"
     target = target.rstrip("/")
     redirect_url = f"{target}/?credential={credential}"
     logger.info("google_oauth_redirect", target=target)
-    return RedirectResponse(url=redirect_url, status_code=303)
+    
+    response = RedirectResponse(url=redirect_url, status_code=303)
+    response.delete_cookie("oauth_redirect_to")
+    return response
 
 
 @router.get("/auth/google/login")
@@ -223,7 +226,7 @@ async def google_login_page(request: Request, redirect_to: str = ""):
     """
     from fastapi.responses import HTMLResponse
 
-    # Determine callback URI
+    # Determine callback URI - MUST be clean with NO query parameters to match Google Cloud Console whitelist
     if settings.api_browser_url:
         base = settings.api_browser_url.rstrip("/")
     else:
@@ -232,8 +235,6 @@ async def google_login_page(request: Request, redirect_to: str = ""):
         base = f"{scheme}://{host}".rstrip("/")
     
     callback_uri = f"{base}/auth/google/callback"
-    if redirect_to:
-        callback_uri = f"{callback_uri}?redirect_to={redirect_to}"
 
     html = f"""
     <!DOCTYPE html>
@@ -292,7 +293,17 @@ async def google_login_page(request: Request, redirect_to: str = ""):
     </body>
     </html>
     """
-    return HTMLResponse(content=html)
+    response = HTMLResponse(content=html)
+    if redirect_to:
+        response.set_cookie(
+            key="oauth_redirect_to",
+            value=redirect_to,
+            max_age=300,
+            httponly=True,
+            samesite="none",
+            secure=True,
+        )
+    return response
 
 
 @router.post("/upload", response_model=FileUploadResponse)
