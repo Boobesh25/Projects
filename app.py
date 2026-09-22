@@ -1,4 +1,6 @@
 import os
+import time
+import asyncio
 import structlog
 import gradio as gr
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,24 +31,26 @@ demo.app.add_middleware(
     allow_headers=["*"],
 )
 
-@demo.app.on_event("startup")
-async def startup_event():
-    logger.info("initializing database")
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 7860))
+    logger.info("launching_gradio_server", port=port)
+
+    # Initialize database tables on startup
     try:
-        await init_db()
+        logger.info("initializing database tables")
+        asyncio.run(init_db())
         logger.info("database ready")
     except Exception as e:
         logger.error("database_init_failed", error=str(e))
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 7860))
-    logger.info("launching_gradio_server", port=port)
+    # Launch Gradio server
     try:
         demo.launch(
             server_name="0.0.0.0",
             server_port=port,
             show_error=True,
             ssr_mode=False,
+            prevent_thread_lock=False,
         )
     except TypeError:
         try:
@@ -55,12 +59,22 @@ if __name__ == "__main__":
                 server_port=port,
                 show_error=True,
                 ssr=False,
+                prevent_thread_lock=False,
             )
         except TypeError:
             demo.launch(
                 server_name="0.0.0.0",
                 server_port=port,
                 show_error=True,
+                prevent_thread_lock=False,
             )
+
+    # Keep process alive
+    try:
+        demo.block()
+    except Exception:
+        while True:
+            time.sleep(3600)
+
 
 
