@@ -1,13 +1,3 @@
----
-title: Rag Project
-emoji: 🤖
-colorFrom: blue
-colorTo: indigo
-sdk: streamlit
-app_file: app.py
-pinned: false
----
-
 # 🤖 GenAI Multi-Agent Chatbot
 
 A production-ready AI chatbot powered by **Google Gemini** and **LangGraph**, featuring a ReAct agent with SQL querying, document Q&A (RAG), and real-time WebSocket communication.
