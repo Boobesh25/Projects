@@ -9,6 +9,17 @@ from src.database import init_db
 
 logger = structlog.get_logger(__name__)
 
+# Satisfy Hugging Face ZeroGPU runtime check if running on ZeroGPU hardware
+try:
+    import spaces
+    @spaces.GPU
+    def _gpu_worker():
+        return True
+    _gpu_worker()
+    logger.info("zero_gpu_runtime_initialized")
+except Exception as e:
+    logger.debug("zero_gpu_not_active", error=str(e))
+
 # Create Gradio landing page
 with gr.Blocks(title="GenAI RAG Backend API") as demo:
     gr.Markdown(
