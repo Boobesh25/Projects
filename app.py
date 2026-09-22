@@ -40,6 +40,27 @@ async def startup_event():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
-    demo.launch(server_name="0.0.0.0", server_port=port)
+    logger.info("launching_gradio_server", port=port)
+    try:
+        demo.launch(
+            server_name="0.0.0.0",
+            server_port=port,
+            show_error=True,
+            ssr_mode=False,
+        )
+    except TypeError:
+        try:
+            demo.launch(
+                server_name="0.0.0.0",
+                server_port=port,
+                show_error=True,
+                ssr=False,
+            )
+        except TypeError:
+            demo.launch(
+                server_name="0.0.0.0",
+                server_port=port,
+                show_error=True,
+            )
 
 
