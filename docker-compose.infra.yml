@@ -1,0 +1,55 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Dedicated Infrastructure Stack for GCP Linux VM (PostgreSQL 16 + Redis 7)
+# Run on VM with: docker compose -f docker-compose.infra.yml up -d
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: gcp_infra
+
+services:
+  # ─── PostgreSQL 16 ──────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres_db
+    restart: always
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-MySecretPassword123}
+      POSTGRES_DB: ${POSTGRES_DB:-genai_chat}
+    volumes:
+      - /var/lib/postgresql/data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - infra_net
+
+  # ─── Redis 7 ────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: redis_cache
+    restart: always
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server 
+      --appendonly yes 
+      --maxmemory 256mb 
+      --maxmemory-policy allkeys-lru 
+      --requirepass "${REDIS_PASSWORD:-MyRedisPassword123}"
+    volumes:
+      - /var/lib/redis/data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-MyRedisPassword123}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - infra_net
+
+networks:
+  infra_net:
+    driver: bridge
