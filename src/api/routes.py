@@ -88,17 +88,27 @@ async def google_auth(req: GoogleAuthRequest):
     if not google_user["email_verified"]:
         raise HTTPException(status_code=401, detail="Google email not verified.")
 
-    # Get or create user in our database (only email + name stored, no password)
-    try:
-        existed, user = await ChatRepository.get_or_create_google_user(
-            google_id=google_user["google_id"],
-            email=google_user["email"],
-            display_name=google_user["name"],
-            avatar_url=google_user["picture"],
-        )
-    except Exception as e:
-        logger.error("google_user_create_failed", error=str(e))
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    # Get or create user in our database with automatic reconnect retry for serverless DBs
+    user = None
+    existed = False
+    last_err = None
+    for attempt in range(3):
+        try:
+            existed, user = await ChatRepository.get_or_create_google_user(
+                google_id=google_user["google_id"],
+                email=google_user["email"],
+                display_name=google_user["name"],
+                avatar_url=google_user["picture"],
+            )
+            break
+        except Exception as e:
+            last_err = e
+            logger.warning("google_user_create_retry", attempt=attempt + 1, error=str(e))
+            await asyncio.sleep(0.5)
+
+    if user is None:
+        logger.error("google_user_create_failed", error=str(last_err))
+        raise HTTPException(status_code=500, detail=f"Database error: {last_err}")
 
     # Load chat history if returning user
     history = []

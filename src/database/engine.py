@@ -6,9 +6,17 @@ from src.config.settings import settings
 engine = create_async_engine(
     settings.database_url,
     echo=False,
-    pool_size=20,
-    max_overflow=10,
-    pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=5,
+    pool_recycle=60,       # Recycle connections every 60s to prevent stale sockets with Neon
+    pool_pre_ping=True,    # Test connections prior to query execution
+    pool_timeout=30,
+    connect_args={
+        "command_timeout": 30,
+        "server_settings": {
+            "application_name": "rag_project",
+        },
+    },
 )
 
 async_session = async_sessionmaker(
