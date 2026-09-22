@@ -121,7 +121,8 @@ services:
       - "8501:8501"
     environment:
       - API_BASE_URL=http://api:8000
-      - API_BROWSER_URL=http://localhost:8000
+      - API_BROWSER_URL=${API_BROWSER_URL:-http://localhost:8000}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:8501}
     depends_on:
       api:
         condition: service_healthy
