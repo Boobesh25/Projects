@@ -87,15 +87,17 @@ class GeminiEmbedder:
         self._last_request_time = time.time()
 
     @retry(
-        stop=stop_after_attempt(4),
-        wait=wait_exponential(multiplier=1, min=2, max=30),
-        retry=retry_if_exception_type((ClientError, ConnectionError, TimeoutError)),
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=1.5, min=2, max=32),
+        retry=retry_if_exception_type((ClientError, ConnectionError, TimeoutError, Exception)),
         before_sleep=lambda retry_state: logger.warning(
-            "embedding_retry", attempt=retry_state.attempt_number,
+            "embedding_retry_backoff",
+            attempt=retry_state.attempt_number,
+            reason=str(retry_state.outcome.exception() if retry_state.outcome else "retrying"),
         ),
     )
     def _embed_batch_api(self, texts: list[str], api_key: str | None = None) -> list[list[float]]:
-        """Call Gemini API for a batch (max 100)."""
+        """Call Gemini API for a batch (adaptive size up to 50)."""
         self._rate_limit()
         client = self.get_client(api_key)
         result = client.models.embed_content(
@@ -107,10 +109,10 @@ class GeminiEmbedder:
 
     def embed(self, texts: list[str], api_key: str | None = None) -> list[list[float]]:
         """
-        Generate embeddings with Redis cache and parallel API calls.
+        Generate embeddings with Redis cache and adaptive parallel API calls.
         - Checks cache first for each text
         - Only calls API for cache misses
-        - Uses concurrent threads for parallel batch processing
+        - Uses adaptive pacing to protect free-tier rate limits on large files
         """
         if not texts:
             return []
@@ -130,19 +132,19 @@ class GeminiEmbedder:
         if cache_hits > 0:
             logger.debug("embedding_cache_hits", hits=cache_hits, misses=len(to_embed))
 
-        # Embed cache misses in parallel batches
+        # Embed cache misses in adaptive batches
         if to_embed:
             from concurrent.futures import ThreadPoolExecutor, as_completed
 
-            BATCH_SIZE = 100
-            MAX_PARALLEL = 5  # 5 concurrent API calls
+            BATCH_SIZE = 30  # Adaptive batch size to avoid free-tier token burst limits
+            MAX_PARALLEL = 2  # Controlled concurrency
 
             batches = []
             for batch_start in range(0, len(to_embed), BATCH_SIZE):
                 batch = to_embed[batch_start:batch_start + BATCH_SIZE]
                 batches.append(batch)
 
-            logger.info("embedding_parallel", batches=len(batches), total_texts=len(to_embed), parallel=MAX_PARALLEL)
+            logger.info("embedding_adaptive_batches", batches=len(batches), total_texts=len(to_embed), parallel=MAX_PARALLEL)
 
             def _process_batch(batch):
                 batch_texts = [text for _, text in batch]
@@ -158,8 +160,7 @@ class GeminiEmbedder:
                             results[idx] = embedding
                             self._set_cached(text, embedding)
                     except Exception as e:
-                        logger.error("embedding_batch_failed", error=str(e))
-                        # Fill failed batch with zero vectors as fallback
+                        logger.error("embedding_batch_permanent_error", error=str(e))
                         batch = futures[future]
                         for idx, text in batch:
                             results[idx] = [0.0] * EMBEDDING_DIM

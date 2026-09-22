@@ -1237,15 +1237,13 @@ async def chat_stream(req: ChatRequest):
                         if extracted:
                             final_answer = extracted
 
-            if not final_answer:
-                final_answer = "I couldn't generate an answer. Please try again."
-
         except Exception as e:
             logger.error("chat_stream_error", error=str(e), user_id=user_id)
-            final_answer = "Sorry, something went wrong. Please try again."
+            from src.utils.errors import format_friendly_error_markdown
+            final_answer = format_friendly_error_markdown(e)
 
         asyncio.create_task(ChatRepository.save_message(user_id, "assistant", final_answer, "agent", session_id=session_id))
-        if "went wrong" not in final_answer and "try again" not in final_answer:
+        if "### " not in final_answer:
             set_cached_answer(user_id, user_content, final_answer, "general")
 
         payload = {

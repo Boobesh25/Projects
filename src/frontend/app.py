@@ -1,7 +1,8 @@
 """
 Streamlit UI for the Agentic AI Multi-Agent Chatbot.
-Uses a synchronous REST API for chat (reliable, no WebSocket/threading issues).
+Uses a synchronous REST API with SSE streaming for live token updates.
 Google OAuth for authentication (no passwords stored).
+Enhanced with lively non-technical status feedback and a modern, premium UI.
 """
 
 import os
@@ -16,6 +17,102 @@ API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 API_BROWSER_URL = os.getenv("API_BROWSER_URL", "http://localhost:8000")
 # Frontend URL to redirect back to after OAuth login
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://projects-bu8jtjbtyqe7otklpukvoq.streamlit.app")
+
+
+# ─── Custom Premium CSS ───────────────────────────────────────────────────────
+
+CUSTOM_CSS = """
+<style>
+/* Modern Typography & Container Spacing */
+.stApp {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Glassmorphism sidebar elements */
+section[data-testid="stSidebar"] {
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Status Badges */
+.badge-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    margin-right: 6px;
+}
+.badge-success {
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.badge-info {
+    background: rgba(59, 130, 246, 0.15);
+    color: #3b82f6;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+.badge-warning {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.badge-admin {
+    background: rgba(168, 85, 247, 0.15);
+    color: #a855f7;
+    border: 1px solid rgba(168, 85, 247, 0.3);
+}
+
+/* Animated Thinking Pulse */
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.95); }
+}
+.pulse-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 12px;
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    color: #818cf8;
+    font-size: 0.9rem;
+    font-weight: 500;
+    animation: pulse-dot 2s infinite ease-in-out;
+}
+
+/* Storage Meter Container */
+.storage-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 12px 16px;
+    margin-top: 8px;
+    margin-bottom: 8px;
+}
+
+/* Chat Message Card Aesthetics */
+.stChatMessage {
+    border-radius: 14px;
+    margin-bottom: 8px;
+    transition: all 0.2s ease;
+}
+
+/* Clean Button Styling */
+div.stButton > button {
+    border-radius: 10px;
+    font-weight: 500;
+    transition: all 0.15s ease-in-out;
+}
+div.stButton > button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+</style>
+"""
 
 
 # ─── Session State ───────────────────────────────────────────────────────────
@@ -55,7 +152,7 @@ def init_state():
 def fetch_api_key_status() -> tuple[bool, str]:
     """Fetch user's API key status from backend."""
     try:
-        resp = requests.get(f"{API_BASE}/user/{st.session_state.user_id}/api-key", timeout=3)
+        resp = requests.get(f"{API_BASE}/user/{st.session_state.user_id}/api-key", timeout=4)
         if resp.status_code == 200:
             data = resp.json()
             st.session_state.has_api_key = data.get("has_api_key", False)
@@ -72,7 +169,7 @@ def save_api_key(api_key: str) -> tuple[bool, str]:
         resp = requests.post(
             f"{API_BASE}/user/{st.session_state.user_id}/api-key",
             json={"api_key": api_key.strip()},
-            timeout=12,
+            timeout=15,
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -91,7 +188,7 @@ def save_api_key(api_key: str) -> tuple[bool, str]:
 def delete_api_key() -> bool:
     """Delete user's stored API key."""
     try:
-        resp = requests.delete(f"{API_BASE}/user/{st.session_state.user_id}/api-key", timeout=3)
+        resp = requests.delete(f"{API_BASE}/user/{st.session_state.user_id}/api-key", timeout=4)
         if resp.status_code == 200:
             st.session_state.has_api_key = False
             st.session_state.masked_api_key = ""
@@ -104,7 +201,7 @@ def delete_api_key() -> bool:
 def refresh_documents():
     """Fetch user's documents, shared documents, and storage quota."""
     try:
-        resp = requests.get(f"{API_BASE}/documents/{st.session_state.user_id}", timeout=3)
+        resp = requests.get(f"{API_BASE}/documents/{st.session_state.user_id}", timeout=4)
         if resp.status_code == 200:
             data = resp.json()
             st.session_state.uploaded_docs = data.get("documents", [])
@@ -122,7 +219,7 @@ def fetch_sessions(force: bool = False) -> list:
     now = time.time()
     if force or (now - st.session_state.sessions_last_fetch > 10):
         try:
-            resp = requests.get(f"{API_BASE}/sessions/{st.session_state.user_id}", timeout=3)
+            resp = requests.get(f"{API_BASE}/sessions/{st.session_state.user_id}", timeout=4)
             if resp.status_code == 200:
                 st.session_state.sessions_cache = resp.json().get("sessions", [])
                 st.session_state.sessions_last_fetch = now
@@ -136,7 +233,7 @@ def load_session_history(session_id: str):
     try:
         resp = requests.get(
             f"{API_BASE}/sessions/{st.session_state.user_id}/{session_id}/history",
-            timeout=3,
+            timeout=4,
         )
         if resp.status_code == 200:
             msgs = resp.json().get("messages", [])
@@ -151,7 +248,7 @@ def load_session_history(session_id: str):
 
 def stream_chat(message: str, status_placeholder):
     """
-    Stream a chat message via SSE. Updates status_placeholder live.
+    Stream a chat message via SSE with lively non-technical status updates.
     Returns the final result dict.
     """
     result = {"answer": "", "session_id": st.session_state.current_session_id, "trace": ""}
@@ -183,7 +280,11 @@ def stream_chat(message: str, status_placeholder):
 
             dtype = data.get("type", "")
             if dtype == "status":
-                status_placeholder.markdown(f"⏳ *{data.get('content', '')}*")
+                status_text = data.get("content", "Reasoning...")
+                status_placeholder.markdown(
+                    f'<div class="pulse-status">✨ {status_text}</div>',
+                    unsafe_allow_html=True,
+                )
             elif dtype == "session":
                 result["session_id"] = data.get("session_id")
             elif dtype == "answer":
@@ -193,10 +294,21 @@ def stream_chat(message: str, status_placeholder):
 
         return result
     except requests.exceptions.Timeout:
-        result["answer"] = "⚠️ Request timed out. Please try again."
+        result["answer"] = (
+            "### 🌐 Network Timeout\n\n"
+            "The AI request took longer than expected to finish. "
+            "Please give it a quick moment and tap ask again."
+        )
+        return result
+    except requests.exceptions.ConnectionError:
+        result["answer"] = (
+            "### 🔌 Service Connecting\n\n"
+            "Unable to reach the backend service. If the server is restarting, "
+            "it will be back online in about 30 seconds."
+        )
         return result
     except Exception as e:
-        result["answer"] = f"⚠️ Connection error: {e}"
+        result["answer"] = f"### ⚠️ Unexpected Notice\n\n{e}\n\nPlease try asking your question again."
         return result
 
 
@@ -233,7 +345,6 @@ def authenticate_with_backend(id_token: str) -> bool:
             st.session_state.masked_api_key = data.get("masked_key", "")
             st.session_state.is_super_admin = data.get("is_super_admin", False)
             st.session_state.authenticated = True
-            # Start fresh — no messages, no session
             st.session_state.messages = []
             st.session_state.current_session_id = None
             refresh_documents()
@@ -250,53 +361,57 @@ def authenticate_with_backend(id_token: str) -> bool:
         return False
 
 
-
 # ─── Login Page ──────────────────────────────────────────────────────────────
 
 def login_page():
-    st.title("🤖 Agentic AI Multi-Agent Chatbot")
-    st.markdown(
-        "Powered by **Gemini Flash** with specialized agents: "
-        "Router, SQL Analyst, Document Expert, and Response Formatter."
-    )
-    st.divider()
+    st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+    
+    col_c1, col_c2, col_c3 = st.columns([1, 2.5, 1])
+    with col_c2:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.title("🤖 Agentic AI Multi-Agent Chat")
+        st.markdown(
+            "Enterprise RAG & SQL intelligence powered by **Gemini Flash Lite** "
+            "with specialized autonomous agents:"
+        )
+        
+        col_f1, col_f2 = st.columns(2)
+        with col_f1:
+            st.markdown("🎯 **Smart Router Agent**  \n📊 **SQL Analyst Agent**")
+        with col_f2:
+            st.markdown("📄 **Document Expert Agent**  \n✨ **Response Synthesizer**")
+            
+        st.divider()
 
-    query_params = st.query_params
-    google_token = query_params.get("credential", None)
+        query_params = st.query_params
+        google_token = query_params.get("credential", None)
 
-    if google_token:
-        with st.spinner("Signing in with Google..."):
-            success = authenticate_with_backend(google_token)
-            if success:
-                st.query_params.clear()
-                st.rerun()
-            else:
-                st.query_params.clear()
-                st.error("❌ Authentication failed. Please try again.")
-        return
+        if google_token:
+            with st.spinner("✨ Signing in with Google securely..."):
+                success = authenticate_with_backend(google_token)
+                if success:
+                    st.query_params.clear()
+                    st.rerun()
+                else:
+                    st.query_params.clear()
+                    st.error("❌ Authentication failed. Please try again.")
+            return
 
-    st.subheader("🔐 Sign in with Google")
-    st.caption("Secure login — we only store your email and name, never your password.")
-    st.markdown("")
-    login_url = f"{API_BROWSER_URL}/auth/google/login"
-    if FRONTEND_URL:
-        login_url = f"{login_url}?redirect_to={FRONTEND_URL}"
+        st.subheader("🔐 Sign in with Google")
+        st.caption("Zero passwords stored — authenticated directly with Google Identity.")
+        st.markdown("")
+        login_url = f"{API_BROWSER_URL}/auth/google/login"
+        if FRONTEND_URL:
+            login_url = f"{login_url}?redirect_to={FRONTEND_URL}"
 
-    st.link_button(
-        "🚀 Sign in with Google",
-        url=login_url,
-        use_container_width=True,
-        type="primary",
-    )
-    st.markdown("---")
-    st.caption(
-        "Clicking above will take you to Google's sign-in page. "
-        "After authenticating, you'll be redirected back here automatically."
-    )
-    st.markdown("")
-    st.caption(
-        "⚡ *Observability is optional and automatically set to `trace=false` unless configured with [LangSmith (Free)](https://smith.langchain.com/).*"
-    )
+        st.link_button(
+            "🚀 Sign in with Google",
+            url=login_url,
+            use_container_width=True,
+            type="primary",
+        )
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.caption("⚡ *Each user has isolated, encrypted storage and private API key management (BYOK).*")
 
 
 # ─── Sidebar ─────────────────────────────────────────────────────────────────
@@ -304,11 +419,23 @@ def login_page():
 def render_sidebar():
     with st.sidebar:
         if st.session_state.avatar_url:
-            st.image(st.session_state.avatar_url, width=50)
-        st.markdown(f"**{st.session_state.display_name}**")
+            st.image(st.session_state.avatar_url, width=54)
+        
+        display = st.session_state.display_name or st.session_state.user_id
+        st.markdown(f"### {display}")
         st.caption(st.session_state.email)
+        
+        # User badges
+        badges_html = '<div style="margin-bottom: 12px;">'
         if st.session_state.get("is_super_admin", False):
-            st.success("👑 **Super Admin (Admin Access)**")
+            badges_html += '<span class="badge-pill badge-admin">👑 Super Admin</span>'
+        if st.session_state.has_api_key:
+            badges_html += '<span class="badge-pill badge-success">🟢 BYOK Active</span>'
+        else:
+            badges_html += '<span class="badge-pill badge-warning">⚡ Shared Key</span>'
+        badges_html += '<span class="badge-pill badge-info">Flash-Lite</span></div>'
+        st.markdown(badges_html, unsafe_allow_html=True)
+
         st.divider()
 
         # ─── Google Gemini API Key (BYOK) ───────────────────────────
@@ -317,12 +444,12 @@ def render_sidebar():
         masked = st.session_state.masked_api_key
 
         if has_key:
-            st.success(f"🟢 Active: `{masked}`")
+            st.success(f"🟢 Active Key: `{masked}`")
             if st.button("🗑️ Remove / Change Key", use_container_width=True):
                 delete_api_key()
                 st.rerun()
         else:
-            st.caption("Bring Your Own Key — encrypted with AES-128 at rest.")
+            st.caption("Bring Your Own Key — encrypted with AES-128 at rest for isolated quotas.")
             user_input_key = st.text_input(
                 "API Key",
                 type="password",
@@ -346,43 +473,28 @@ def render_sidebar():
                 "[👉 Get free API key from Google AI Studio](https://aistudio.google.com/apikey)"
             )
 
-        # ─── Observability / LangSmith (Optional) ───────────────────
-        with st.expander("📊 Observability / LangSmith", expanded=False):
-            st.caption(
-                "LangSmith provides agent execution traces and latency analysis.  \n\n"
-                "**Tracing is optional** — if unconfigured, the system automatically runs with `trace=false` without any errors."
-            )
-            st.markdown(
-                "[👉 Get free LangSmith account & API key](https://smith.langchain.com/)"
-            )
-
         st.divider()
 
-        # ─── Instant Chat & Shared Knowledge Base ───────────────────
-        st.subheader("🌐 Knowledge Base")
-        st.session_state.include_shared = st.checkbox(
-            "Include Shared Demo Documents",
-            value=st.session_state.get("include_shared", True),
-            help="When enabled, the agent can instantly answer questions using pre-loaded demo knowledge bases without requiring you to upload files.",
-            key="chk_include_shared",
-        )
-
-        st.divider()
-
-        # ─── Sessions ───────────────────────────────────────────────
-        st.subheader("💬 Sessions")
-
-        if st.button("➕ New Chat", use_container_width=True):
-            st.session_state.current_session_id = None
-            st.session_state.messages = []
-            st.rerun()
+        # ─── Chat Sessions ──────────────────────────────────────────
+        st.subheader("💬 Chat Sessions")
+        col_new, col_ref = st.columns([3, 1])
+        with col_new:
+            if st.button("➕ New Chat", use_container_width=True, type="primary"):
+                st.session_state.current_session_id = None
+                st.session_state.messages = []
+                fetch_sessions(force=True)
+                st.rerun()
+        with col_ref:
+            if st.button("🔄", help="Refresh session list"):
+                fetch_sessions(force=True)
+                st.rerun()
 
         sessions = fetch_sessions()
-        for sess in sessions[:15]:
-            title = sess["title"]
+        for sess in sessions:
             sess_id = sess["id"]
-            is_active = st.session_state.current_session_id == sess_id
-            label = f"▶ {title}" if is_active else title
+            title = sess.get("title", "New Chat") or "New Chat"
+            is_active = (sess_id == st.session_state.current_session_id)
+            label = f"👉 {title[:20]}" if is_active else title[:22]
 
             col_s, col_d = st.columns([5, 1])
             with col_s:
@@ -395,7 +507,7 @@ def render_sidebar():
                     try:
                         requests.delete(
                             f"{API_BASE}/sessions/{st.session_state.user_id}/{sess_id}",
-                            timeout=3,
+                            timeout=4,
                         )
                     except Exception:
                         pass
@@ -407,9 +519,20 @@ def render_sidebar():
 
         st.divider()
 
+        # ─── Shared Demo Knowledge Base ─────────────────────────────
+        st.subheader("🌐 Knowledge Base")
+        st.session_state.include_shared = st.checkbox(
+            "Include Shared Demo Documents",
+            value=st.session_state.get("include_shared", True),
+            help="When enabled, the agent answers using pre-loaded demo knowledge bases without requiring you to upload files.",
+            key="chk_include_shared",
+        )
+
+        st.divider()
+
         # ─── Document Upload ────────────────────────────────────────
-        st.header("📄 Document Upload")
-        st.caption("Upload files to ask questions about them.")
+        st.subheader("📄 Document Upload")
+        st.caption("Upload files to ask questions about them (PDF, DOCX, CSV, TXT, MD).")
 
         uploaded_file = st.file_uploader(
             "Upload a document",
@@ -429,7 +552,7 @@ def render_sidebar():
 
         if uploaded_file is not None:
             if st.button("📤 Process & Store", type="primary", use_container_width=True):
-                with st.spinner(f"Processing {uploaded_file.name}..."):
+                with st.spinner(f"✨ Ingesting and embedding {uploaded_file.name}..."):
                     try:
                         files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
                         data = {
@@ -441,6 +564,7 @@ def render_sidebar():
                             st.success(f"✅ {resp.json()['message']}")
                             refresh_documents()
                             st.session_state.uploader_key += 1
+                            time.sleep(0.5)
                             st.rerun()
                         else:
                             try:
@@ -449,41 +573,27 @@ def render_sidebar():
                                 err = f"Status {resp.status_code}"
                             st.error(f"❌ {err}")
                     except requests.exceptions.ConnectionError:
-                        st.error("❌ Cannot reach backend. Is the API running?")
+                        st.error("❌ Cannot reach backend service. Please try again.")
                     except Exception as e:
                         st.error(f"❌ Upload error: {e}")
 
         st.divider()
         st.subheader("📚 Your Documents")
 
-        # Storage quota meter
+        # Storage quota visual meter
         used_mb = st.session_state.get("storage_used_mb", 0.0)
         quota_mb = st.session_state.get("storage_quota_mb", 0)
         if quota_mb > 0 and not st.session_state.get("is_super_admin", False):
             pct = min(1.0, used_mb / max(quota_mb, 1))
             st.progress(pct)
-            st.caption(f"💾 Storage: {used_mb:.1f} MB / {quota_mb} MB ({pct*100:.0f}% used)")
+            st.caption(f"💾 Storage: **{used_mb:.1f} MB** of **{quota_mb} MB** ({pct*100:.0f}% used)")
         elif st.session_state.get("is_super_admin", False):
-            st.caption(f"💾 Storage: {used_mb:.1f} MB used (👑 Super Admin Unlimited)")
+            st.caption(f"💾 Storage: **{used_mb:.1f} MB** used (👑 Super Admin Unlimited)")
         else:
-            st.caption(f"💾 Storage: {used_mb:.1f} MB used (Unlimited in Local Mode)")
+            st.caption(f"💾 Storage: **{used_mb:.1f} MB** used")
 
-        if st.button("🔄 Refresh", use_container_width=True):
+        if st.button("🔄 Refresh Documents", use_container_width=True):
             refresh_documents()
-            # Also check upload status on manual refresh only
-            try:
-                status_resp = requests.get(
-                    f"{API_BASE}/upload-status/{st.session_state.user_id}", timeout=2
-                )
-                if status_resp.status_code == 200:
-                    pending = status_resp.json().get("pending", {})
-                    for fname, status in pending.items():
-                        if status == "processing":
-                            st.info(f"⏳ {fname} — processing...")
-                        elif status.startswith("error"):
-                            st.error(f"❌ {fname} — failed")
-            except Exception:
-                pass
             st.rerun()
 
         if st.session_state.uploaded_docs:
@@ -531,15 +641,16 @@ def render_sidebar():
                                 pass
 
 
-
 # ─── Chat Page ───────────────────────────────────────────────────────────────
 
 def chat_page():
+    st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+    
     col1, col2 = st.columns([5, 1])
     with col1:
-        st.title("🤖 Agentic AI Chat")
+        st.title("🤖 Agentic AI Multi-Agent Chat")
         display = st.session_state.display_name or st.session_state.user_id
-        st.caption(f"**{display}** ({st.session_state.email}) | Model: Gemini Flash")
+        st.caption(f"**{display}** ({st.session_state.email}) | Model: **Gemini 3.5 Flash Lite**")
     with col2:
         if st.button("🚪 Logout", use_container_width=True):
             logout()
@@ -548,13 +659,13 @@ def chat_page():
     st.divider()
 
     if not st.session_state.has_api_key:
-        st.warning(
-            "🔑 **Google Gemini API Key Required**  \n"
-            "Please enter your Google Gemini API key in the sidebar to start chatting and uploading documents.  \n"
-            "You can generate a free key in seconds at [Google AI Studio](https://aistudio.google.com/apikey)."
+        st.info(
+            "💡 **Tip: Add Your Personal Gemini API Key**  \n"
+            "To enjoy isolated quotas and higher speed limits, save your Google Gemini API key in the sidebar.  \n"
+            "Free keys can be created in seconds at [Google AI Studio](https://aistudio.google.com/apikey)."
         )
 
-    # Render all messages (fast — no network)
+    # Render all messages
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
@@ -566,7 +677,10 @@ def chat_page():
 
         with st.chat_message("assistant"):
             status_placeholder = st.empty()
-            status_placeholder.markdown("⏳ *Starting...*")
+            status_placeholder.markdown(
+                '<div class="pulse-status">✨ Reasoning across multi-agent graph...</div>',
+                unsafe_allow_html=True,
+            )
             result = stream_chat(prompt, status_placeholder)
             status_placeholder.empty()
 
@@ -581,18 +695,17 @@ def chat_page():
         st.rerun()
 
     if st.session_state.last_trace:
-        with st.expander("🔍 Agent Trace (last query)", expanded=False):
+        with st.expander("🔍 Agent Reasoning Trace", expanded=False):
             st.code(st.session_state.last_trace, language=None)
-            st.caption("💡 Traces run locally by default. For cloud telemetry and graph visualizer, see [LangSmith](https://smith.langchain.com/).")
+            st.caption("💡 Multi-agent orchestration step trace across Router, SQL Analyst, and Document Expert.")
 
-
-    # Chat input — show user message immediately on rerun
-    if prompt := st.chat_input("Ask anything...", disabled=bool(st.session_state.pending_prompt)):
+    # Chat input
+    if prompt := st.chat_input("Ask anything about your documents, data, or general knowledge...", disabled=bool(st.session_state.pending_prompt)):
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.session_state.pending_prompt = prompt
         st.rerun()
 
-    # Sidebar rendered LAST so chat area renders first (avoids blocking delay)
+    # Sidebar rendered LAST so chat area renders first
     render_sidebar()
 
 
