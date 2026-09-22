@@ -1,51 +1,52 @@
-import os
-import multiprocessing
-import uvicorn
-import structlog
-import gradio as gr
-from src.api.app import app as fastapi_app
+"""
+Unified entry point for Hugging Face Spaces (Streamlit SDK).
+Launches FastAPI backend on 127.0.0.1:8000 in background and serves Streamlit UI on 0.0.0.0:7860.
+"""
 
+import os
+import sys
+import time
+import socket
+import threading
+import structlog
+import uvicorn
+from dotenv import load_dotenv
+
+load_dotenv()
 logger = structlog.get_logger(__name__)
 
-# Define @spaces.GPU function for ZeroGPU compatibility
-try:
-    import spaces
-    @spaces.GPU(duration=120)
-    def gpu_health_check():
-        """Satisfies Hugging Face ZeroGPU runtime AST check."""
-        return "GPU Runtime Active"
-except Exception:
-    def gpu_health_check():
-        return "CPU Runtime Active"
 
-# Create Gradio landing page
-with gr.Blocks(title="GenAI RAG Backend API") as ui_demo:
-    gr.Markdown(
-        """
-        # ⚡ GenAI RAG Chatbot Backend API is Live!
-        
-        * 📖 **Interactive Swagger Docs**: [/docs](/docs)
-        * 🩺 **Health Check Endpoint**: [/health](/health)
-        * 🎨 **Frontend**: Connect Streamlit by setting `API_BASE_URL` to this Space URL.
-        """
-    )
-    # Hidden component wired to @spaces.GPU function so AST scanner validates the Space
-    status_output = gr.Textbox(visible=False)
-    ui_demo.load(fn=gpu_health_check, outputs=status_output)
+def _is_port_open(port: int = 8000) -> bool:
+    """Check if the backend FastAPI server is listening."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex(("127.0.0.1", port)) == 0
 
-# Mount Gradio landing UI at /ui onto the FastAPI app
-app = gr.mount_gradio_app(fastapi_app, ui_demo, path="/ui")
+
+def _start_fastapi_server():
+    """Start the FastAPI backend server on 127.0.0.1:8000."""
+    from src.api.app import app as fastapi_app
+    logger.info("starting_fastapi_background_server", port=8000)
+    uvicorn.run(fastapi_app, host="127.0.0.1", port=8000, log_level="warning")
+
+
+# Ensure backend is running before Streamlit connects
+if not _is_port_open(8000):
+    backend_thread = threading.Thread(target=_start_fastapi_server, daemon=True)
+    backend_thread.start()
+    
+    # Wait for backend to be ready
+    for _ in range(30):
+        if _is_port_open(8000):
+            logger.info("fastapi_backend_ready_on_8000")
+            break
+        time.sleep(0.5)
+
+# Set backend URL for frontend requests
+os.environ["API_BASE_URL"] = "http://127.0.0.1:8000"
+
+# Run Streamlit frontend UI
+from src.frontend.app import main
 
 if __name__ == "__main__":
-    # Prevent ZeroGPU spawned subprocesses from duplicate port bindings
-    if multiprocessing.current_process().name == "MainProcess":
-        # Port 7860 is the standard HF space application port (7861 is used internally by HF proxy)
-        port = 7860
-        logger.info("starting_fastapi_server", port=port)
-        uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
-
-
-
-
-
-
+    main()
