@@ -13,6 +13,7 @@ logger = structlog.get_logger(__name__)
 
 # Gemini pricing (per 1M tokens)
 PRICING = {
+    "gemini-3.6-flash": {"input": 0.15, "output": 3.50},
     "gemini-3.5-flash": {"input": 1.50, "output": 9.00},
     "gemini-2.5-flash-lite": {"input": 0.15, "output": 0.60},
     "gemini-2.5-flash": {"input": 0.15, "output": 3.50},
