@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     # Google Gemini
     gemini_api_key: str = Field(default="", env="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-3.5-flash", env="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemini-2.5-flash", env="GEMINI_MODEL")
     gemini_base_url: str = Field(
         default="https://generativelanguage.googleapis.com/v1beta/openai/",
         env="GEMINI_BASE_URL",

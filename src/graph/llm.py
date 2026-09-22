@@ -26,6 +26,7 @@ def get_llm(
         google_api_key=effective_key,
         temperature=temperature,
         max_output_tokens=8192,
+        max_retries=3,
         callbacks=callbacks,
     )
 

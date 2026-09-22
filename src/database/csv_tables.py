@@ -4,6 +4,7 @@ import io
 import re
 import structlog
 import pandas as pd
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 from sqlalchemy import text, create_engine
 from src.database.engine import engine
 from src.config.settings import settings
@@ -20,13 +21,35 @@ def _get_sync_engine():
     global _sync_engine
     if _sync_engine is None:
         sync_url = settings.database_url.replace("+asyncpg", "+psycopg2")
+        if sync_url.startswith("postgresql://"):
+            sync_url = sync_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+
+        # Fix SSL parameter for psycopg2 (asyncpg uses ssl=..., psycopg2 requires sslmode=...)
+        parsed = urlparse(sync_url)
+        qs = parse_qs(parsed.query)
+        if "ssl" in qs:
+            ssl_val = qs.pop("ssl")[0]
+            if ssl_val.lower() in ("require", "true", "1"):
+                qs["sslmode"] = ["require"]
+            elif ssl_val.lower() in ("prefer",):
+                qs["sslmode"] = ["prefer"]
+            elif ssl_val.lower() in ("disable", "false", "0"):
+                qs["sslmode"] = ["disable"]
+            else:
+                qs["sslmode"] = [ssl_val]
+        elif "neon.tech" in parsed.netloc and "sslmode" not in qs:
+            qs["sslmode"] = ["require"]
+
+        new_query = urlencode(qs, doseq=True)
+        sync_url = urlunparse(parsed._replace(query=new_query))
+
         _sync_engine = create_engine(
             sync_url,
             pool_size=5,
             max_overflow=2,
             pool_pre_ping=True,
         )
-        logger.info("sync_engine_created", url=sync_url[:30] + "...")
+        logger.info("sync_engine_created", url=re.sub(r"://[^@]+@", "://***:***@", sync_url))
     return _sync_engine
 
 
