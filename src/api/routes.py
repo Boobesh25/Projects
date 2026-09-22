@@ -4,7 +4,7 @@ import json
 import hashlib
 import asyncio
 import uuid
-from fastapi import APIRouter, WebSocket, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import APIRouter, WebSocket, UploadFile, File, Form, HTTPException, BackgroundTasks, Request
 import structlog
 
 from src.api.schemas import (
@@ -197,25 +197,43 @@ async def delete_user_api_key_endpoint(user_id: str):
 
 
 @router.post("/auth/google/callback")
-async def google_callback(credential: str = Form(...)):
+async def google_callback(
+    credential: str = Form(...),
+    redirect_to: str = "",
+):
     """
     Google redirects here after sign-in (ux_mode=redirect).
     Receives the credential via POST form, then redirects to Streamlit with the token.
     """
     from fastapi.responses import RedirectResponse
 
-    # Redirect to Streamlit frontend with the credential as a query param
-    redirect_url = f"http://localhost:8501/?credential={credential}"
+    # Determine frontend target
+    target = redirect_to or settings.frontend_url or "http://localhost:8501"
+    target = target.rstrip("/")
+    redirect_url = f"{target}/?credential={credential}"
+    logger.info("google_oauth_redirect", target=target)
     return RedirectResponse(url=redirect_url, status_code=303)
 
 
 @router.get("/auth/google/login")
-async def google_login_page():
+async def google_login_page(request: Request, redirect_to: str = ""):
     """
     Serves a Google Sign-In page. User clicks the button here,
     Google authenticates, then redirects back to /auth/google/callback.
     """
     from fastapi.responses import HTMLResponse
+
+    # Determine callback URI
+    if settings.api_browser_url:
+        base = settings.api_browser_url.rstrip("/")
+    else:
+        scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+        host = request.headers.get("x-forwarded-host", request.headers.get("host", request.url.netloc))
+        base = f"{scheme}://{host}".rstrip("/")
+    
+    callback_uri = f"{base}/auth/google/callback"
+    if redirect_to:
+        callback_uri = f"{callback_uri}?redirect_to={redirect_to}"
 
     html = f"""
     <!DOCTYPE html>
@@ -253,7 +271,7 @@ async def google_login_page():
 
             <div id="g_id_onload"
                  data-client_id="{settings.google_client_id}"
-                 data-login_uri="http://localhost:8000/auth/google/callback"
+                 data-login_uri="{callback_uri}"
                  data-auto_prompt="false"
                  data-ux_mode="redirect">
             </div>

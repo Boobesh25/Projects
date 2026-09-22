@@ -14,6 +14,8 @@ import requests
 API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 # Browser-facing URL (for OAuth redirect button in user's browser)
 API_BROWSER_URL = os.getenv("API_BROWSER_URL", "http://localhost:8000")
+# Frontend URL to redirect back to after OAuth login
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://projects-bu8jtjbtyqe7otklpukvoq.streamlit.app")
 
 
 # ─── Session State ───────────────────────────────────────────────────────────
@@ -276,9 +278,13 @@ def login_page():
     st.subheader("🔐 Sign in with Google")
     st.caption("Secure login — we only store your email and name, never your password.")
     st.markdown("")
+    login_url = f"{API_BROWSER_URL}/auth/google/login"
+    if FRONTEND_URL:
+        login_url = f"{login_url}?redirect_to={FRONTEND_URL}"
+
     st.link_button(
         "🚀 Sign in with Google",
-        url=f"{API_BROWSER_URL}/auth/google/login",
+        url=login_url,
         use_container_width=True,
         type="primary",
     )

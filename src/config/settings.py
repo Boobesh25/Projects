@@ -30,9 +30,11 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(default="change-me-in-production-use-a-random-string", env="JWT_SECRET")
     jwt_expiry_hours: int = Field(default=24, env="JWT_EXPIRY_HOURS")
 
-    # Google OAuth
+    # Google OAuth & URLs
     google_client_id: str = Field(default="", env="GOOGLE_CLIENT_ID")
     google_client_secret: str = Field(default="", env="GOOGLE_CLIENT_SECRET")
+    frontend_url: str = Field(default="https://projects-bu8jtjbtyqe7otklpukvoq.streamlit.app", env="FRONTEND_URL")
+    api_browser_url: str = Field(default="", env="API_BROWSER_URL")
 
     # Agent settings
     max_context_messages: int = Field(default=25, env="MAX_CONTEXT_MESSAGES")
