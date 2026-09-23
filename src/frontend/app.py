@@ -361,6 +361,39 @@ def authenticate_with_backend(id_token: str) -> bool:
         return False
 
 
+def authenticate_direct_user(user_identifier: str) -> bool:
+    """Authenticate directly with user_id or email via backend /connect endpoint."""
+    clean_id = user_identifier.strip().lower()
+    if not clean_id:
+        st.warning("Please enter a valid email or username.")
+        return False
+    try:
+        resp = requests.post(
+            f"{API_BASE}/connect",
+            json={"user_id": clean_id},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            st.session_state.user_id = data["user_id"]
+            st.session_state.email = clean_id if "@" in clean_id else f"{clean_id}@app.local"
+            st.session_state.display_name = clean_id.split("@")[0].capitalize()
+            st.session_state.avatar_url = ""
+            st.session_state.token = data.get("token", "")
+            st.session_state.authenticated = True
+            st.session_state.messages = []
+            st.session_state.current_session_id = None
+            fetch_api_key_status()
+            refresh_documents()
+            return True
+        else:
+            st.error(f"❌ Connection failed (Status {resp.status_code})")
+            return False
+    except Exception as e:
+        st.error(f"❌ Cannot connect to backend: {e}")
+        return False
+
+
 # ─── Login Page ──────────────────────────────────────────────────────────────
 
 def login_page():
@@ -397,18 +430,31 @@ def login_page():
                     st.error("❌ Authentication failed. Please try again.")
             return
 
-        st.subheader("🔐 Sign in with Google")
-        st.caption("Zero passwords stored — authenticated directly with Google Identity.")
-        st.markdown("")
+        # Option A: Instant Direct Sign-In (Works without Google Cloud Origin whitelisting)
+        st.subheader("⚡ Quick Access")
+        with st.form("direct_login_form"):
+            direct_id = st.text_input(
+                "Enter Email or Username",
+                placeholder="e.g. boobesh@gmail.com",
+                help="Sign in instantly to your personal isolated workspace with Postgres & Redis persistence.",
+            )
+            login_btn = st.form_submit_button("🚀 Enter Chat Workspace", type="primary", use_container_width=True)
+            if login_btn:
+                if authenticate_direct_user(direct_id):
+                    st.rerun()
+
+        st.markdown("<div style='text-align: center; margin: 16px 0; color: #888;'>── OR ──</div>", unsafe_allow_html=True)
+
+        # Option B: Google Single Sign-On
+        st.subheader("🔐 Google Single Sign-On")
         login_url = f"{API_BROWSER_URL}/auth/google/login"
         if FRONTEND_URL:
             login_url = f"{login_url}?redirect_to={FRONTEND_URL}"
 
         st.link_button(
-            "🚀 Sign in with Google",
+            "🌐 Sign in with Google",
             url=login_url,
             use_container_width=True,
-            type="primary",
         )
         st.markdown("<br>", unsafe_allow_html=True)
         st.caption("⚡ *Each user has isolated, encrypted storage and private API key management (BYOK).*")

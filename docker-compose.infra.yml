@@ -3,7 +3,7 @@
 # Run on VM with: docker compose -f docker-compose.infra.yml up -d
 # ─────────────────────────────────────────────────────────────────────────────
 
-name: gcp_infra
+version: '3.8'
 
 services:
   # ─── PostgreSQL 16 ──────────────────────────────────────────────────────────

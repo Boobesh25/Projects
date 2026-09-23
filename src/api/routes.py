@@ -296,6 +296,13 @@ async def google_login_page(request: Request, redirect_to: str = ""):
                  data-width="300">
             </div>
 
+            <div id="fallback-login" style="margin-top: 16px;">
+                <a href="{settings.frontend_url or 'https://projects-bu8jtjbtyqe7otklpukvoq.streamlit.app'}"
+                   style="display: inline-block; padding: 10px 20px; background: #4f46e5; color: white; border-radius: 8px; text-decoration: none; font-weight: 500; font-size: 14px;">
+                    🔙 Return to App & Quick Login
+                </a>
+            </div>
+
             <p style="margin-top: 24px; font-size: 12px; color: #999;">
                 We only store your email and name. No passwords.
             </p>
