@@ -63,6 +63,24 @@ class Settings(BaseSettings):
     user_storage_quota_mb: int = Field(default=0, env="USER_STORAGE_QUOTA_MB")  # 0 = Unlimited (local default)
     shared_user_id: str = "__shared__"
 
+    @field_validator("api_port", "qdrant_port", "jwt_expiry_hours", "max_context_messages", "daily_message_limit", "user_storage_quota_mb", mode="before")
+    @classmethod
+    def parse_int_safe(cls, v, info):
+        if v is None or (isinstance(v, str) and not v.strip()):
+            defaults = {
+                "api_port": 8000,
+                "qdrant_port": 6333,
+                "jwt_expiry_hours": 24,
+                "max_context_messages": 25,
+                "daily_message_limit": 50,
+                "user_storage_quota_mb": 0,
+            }
+            return defaults.get(info.field_name, 0)
+        try:
+            return int(v)
+        except (ValueError, TypeError):
+            return 0
+
     @field_validator("langchain_tracing_v2", mode="before")
     @classmethod
     def parse_tracing_flag(cls, v):
