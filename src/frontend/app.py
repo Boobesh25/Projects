@@ -141,6 +141,9 @@ def init_state():
         "include_shared": True,
         "storage_used_mb": 0.0,
         "storage_quota_mb": 0,
+        "langsmith_enabled": False,
+        "langsmith_api_key": "",
+        "langsmith_project": "genai_chat_project",
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -260,6 +263,9 @@ def stream_chat(message: str, status_placeholder):
                 "message": message,
                 "session_id": st.session_state.current_session_id,
                 "include_shared": st.session_state.get("include_shared", True),
+                "langsmith_tracing": st.session_state.get("langsmith_enabled", False),
+                "langsmith_api_key": st.session_state.get("langsmith_api_key", ""),
+                "langsmith_project": st.session_state.get("langsmith_project", "genai_chat_project"),
             },
             stream=True,
             timeout=300,
@@ -505,6 +511,48 @@ def render_sidebar():
             st.markdown(
                 "[👉 Get free API key from Google AI Studio](https://aistudio.google.com/apikey)"
             )
+
+        st.divider()
+
+        # ─── LangSmith Tracing & Observability ───────────────────────
+        st.subheader("🔬 LangSmith Tracing")
+        with st.expander("🛠️ Trace Name & Settings", expanded=st.session_state.get("langsmith_enabled", False)):
+            tracing_on = st.checkbox(
+                "Enable LangSmith Tracing",
+                value=st.session_state.get("langsmith_enabled", False),
+                help="Stream live LLM runs, agent thought graphs, and tool invocations to LangSmith.",
+                key="chk_langsmith_enabled",
+            )
+            st.session_state.langsmith_enabled = tracing_on
+
+            ls_key = st.text_input(
+                "LangSmith API Key",
+                value=st.session_state.get("langsmith_api_key", ""),
+                type="password",
+                placeholder="lsv2_pt_...",
+                help="Starts with lsv2_pt_ from smith.langchain.com (optional if set on server)",
+                key="input_langsmith_key",
+            )
+            st.session_state.langsmith_api_key = ls_key
+
+            ls_project = st.text_input(
+                "Project / Trace Name",
+                value=st.session_state.get("langsmith_project", "genai_chat_project"),
+                placeholder="e.g. genai_chat_project",
+                help="Name of the project dashboard in LangSmith where your traces are recorded.",
+                key="input_langsmith_project",
+            )
+            st.session_state.langsmith_project = ls_project.strip() or "genai_chat_project"
+
+            st.markdown(
+                '<a href="https://smith.langchain.com" target="_blank" style="text-decoration:none;">'
+                '<button style="width:100%; padding:7px 12px; margin-top:8px; border-radius:8px; background:rgba(99,102,241,0.15); '
+                'color:#6366f1; border:1px solid rgba(99,102,241,0.3); font-weight:600; cursor:pointer;">'
+                '📊 Open LangSmith Dashboard ↗'
+                '</button></a>',
+                unsafe_allow_html=True,
+            )
+            st.caption("[👉 Get free API key from LangSmith](https://smith.langchain.com)")
 
         st.divider()
 

@@ -93,6 +93,9 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     session_id: str | None = None
     include_shared: bool = True
+    langsmith_tracing: bool = False
+    langsmith_api_key: str = ""
+    langsmith_project: str = ""
 
 
 

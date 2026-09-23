@@ -997,6 +997,27 @@ async def reupload_document(
     }
 
 
+def _get_langsmith_tracer(
+    api_key: str = "",
+    project_name: str = "",
+    tracing_enabled: bool = False,
+):
+    """Dynamically configure LangSmith tracer callback if enabled."""
+    is_enabled = tracing_enabled or settings.langchain_tracing_v2
+    effective_key = (api_key or settings.langchain_api_key).strip()
+    effective_project = (project_name or settings.langchain_project).strip() or "genai_chat_project"
+
+    if is_enabled and effective_key:
+        try:
+            from langsmith import Client
+            from langchain_core.tracers import LangChainTracer
+            client = Client(api_key=effective_key, endpoint=settings.langsmith_endpoint)
+            return LangChainTracer(project_name=effective_project, client=client)
+        except Exception as e:
+            logger.warning("langsmith_tracer_init_error", error=str(e))
+    return None
+
+
 # ─── Synchronous Chat (REST) ─────────────────────────────────────────────────
 
 @router.post("/chat", response_model=ChatResponse)
@@ -1073,16 +1094,23 @@ async def chat(req: ChatRequest):
     trace_steps = []
     final_answer = ""
 
+    run_config = {
+        "recursion_limit": 40,
+        "metadata": {
+            "user_id": user_id,
+            "project": req.langsmith_project or settings.langchain_project,
+        },
+        "tags": [f"user:{user_id}", f"project:{req.langsmith_project or settings.langchain_project}"],
+    }
+    ls_tracer = _get_langsmith_tracer(req.langsmith_api_key, req.langsmith_project, req.langsmith_tracing)
+    if ls_tracer:
+        run_config["callbacks"] = [ls_tracer]
 
     try:
         async for event in agent.astream_events(
             {"messages": messages},
             version="v2",
-            config={
-                "recursion_limit": 40,
-                "metadata": {"user_id": user_id},
-                "tags": [f"user:{user_id}"],
-            },
+            config=run_config,
         ):
             kind = event.get("event", "")
             if kind == "on_tool_start":
@@ -1203,15 +1231,23 @@ async def chat_stream(req: ChatRequest):
         final_answer = ""
 
 
+        run_config = {
+            "recursion_limit": 40,
+            "metadata": {
+                "user_id": user_id,
+                "project": req.langsmith_project or settings.langchain_project,
+            },
+            "tags": [f"user:{user_id}", f"project:{req.langsmith_project or settings.langchain_project}"],
+        }
+        ls_tracer = _get_langsmith_tracer(req.langsmith_api_key, req.langsmith_project, req.langsmith_tracing)
+        if ls_tracer:
+            run_config["callbacks"] = [ls_tracer]
+
         try:
             async for event in agent.astream_events(
                 {"messages": messages},
                 version="v2",
-                config={
-                    "recursion_limit": 40,
-                    "metadata": {"user_id": user_id},
-                    "tags": [f"user:{user_id}"],
-                },
+                config=run_config,
             ):
                 kind = event.get("event", "")
                 if kind == "on_tool_start":
