@@ -3,8 +3,19 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from src.config.settings import settings
 
+def _get_clean_db_url(raw_url: str) -> str:
+    url = (raw_url or "").strip().strip('"').strip("'").strip()
+    if not url:
+        return "postgresql+asyncpg://postgres:MySecretPassword123@127.0.0.1:5432/genai_chat"
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgresql://") and "+asyncpg" not in url:
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+
 engine = create_async_engine(
-    settings.database_url,
+    _get_clean_db_url(settings.database_url),
     echo=False,
     pool_size=10,
     max_overflow=5,

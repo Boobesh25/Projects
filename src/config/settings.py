@@ -81,6 +81,18 @@ class Settings(BaseSettings):
         except (ValueError, TypeError):
             return 0
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def clean_db_url(cls, v):
+        if not v:
+            return "postgresql+asyncpg://postgres:MySecretPassword123@127.0.0.1:5432/genai_chat"
+        v = str(v).strip().strip('"').strip("'").strip()
+        if v.startswith("postgres://"):
+            v = v.replace("postgres://", "postgresql+asyncpg://", 1)
+        elif v.startswith("postgresql://") and "+asyncpg" not in v:
+            v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return v
+
     @field_validator("langchain_tracing_v2", mode="before")
     @classmethod
     def parse_tracing_flag(cls, v):
