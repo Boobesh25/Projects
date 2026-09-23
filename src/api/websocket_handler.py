@@ -165,74 +165,100 @@ async def handle_websocket(websocket: WebSocket, user_id: str):
                     "agent_name": None,
                 })
 
-                # ─── Run ReAct agent ──────────────────────────────
+                # ─── Run Multi-Agent Graph ──────────────────────────────
                 try:
+                    from src.graph.state import MultiAgentState
+                    from langchain_core.messages import AIMessage
+
                     # Add user message to conversation (clean history)
                     messages.append(HumanMessage(content=user_content))
 
-                    # Agent gets clean messages as input; tool calls happen internally
                     trace_steps = []
                     final_answer = ""
 
-                    async for event in agent.astream_events(
-                        {"messages": messages},
-                        version="v2",
+                    init_state = MultiAgentState(
+                        messages=messages,
+                        user_id=user_id,
+                        session_id=current_session_id or "",
+                        include_shared=True,
+                    )
+
+                    async for chunk in agent.astream(
+                        init_state,
+                        stream_mode="updates",
                         config={
                             "recursion_limit": 40,
                             "metadata": {"user_id": user_id},
                             "tags": [f"user:{user_id}"],
                         },
                     ):
-                        kind = event.get("event", "")
+                        for node_name, node_output in chunk.items():
+                            if node_name == "router":
+                                plan = node_output.get("plan")
+                                if plan:
+                                    if plan.is_clarification_needed and plan.clarification_question:
+                                        final_answer = plan.clarification_question
+                                    elif plan.is_complex or len(plan.subtasks) > 1:
+                                        agents = list({t.agent for t in plan.subtasks})
+                                        await websocket.send_json({
+                                            "type": "status",
+                                            "content": f"⚡ Multi-Agent Orchestrator: Coordinating {len(plan.subtasks)} subtasks across {len(agents)} agents...",
+                                            "agent_name": "orchestrator",
+                                        })
+                                    elif plan.subtasks:
+                                        single = plan.subtasks[0].agent
+                                        friendly = {
+                                            "sql_analyst": "📊 SQL Analyst: Inspecting schema & querying PostgreSQL tables...",
+                                            "document_expert": "📄 Document Expert: Searching knowledge base & vector store...",
+                                            "web_researcher": "🌐 Web Researcher: Conducting real-time web search via MCP...",
+                                        }.get(single, "💬 Assistant: Processing response...")
+                                        await websocket.send_json({
+                                            "type": "status",
+                                            "content": friendly,
+                                            "agent_name": single,
+                                        })
+                            elif node_name == "sql_analyst":
+                                await websocket.send_json({
+                                    "type": "status",
+                                    "content": "✓ SQL Analyst finished querying data tables",
+                                    "agent_name": "sql_analyst",
+                                })
+                            elif node_name == "document_expert":
+                                await websocket.send_json({
+                                    "type": "status",
+                                    "content": "✓ Document Expert finished retrieving information",
+                                    "agent_name": "document_expert",
+                                })
+                            elif node_name == "web_researcher":
+                                await websocket.send_json({
+                                    "type": "status",
+                                    "content": "✓ Web Researcher gathered live internet facts",
+                                    "agent_name": "web_researcher",
+                                })
+                            elif node_name == "complex_orchestrator":
+                                await websocket.send_json({
+                                    "type": "status",
+                                    "content": "✓ Multi-agent subtasks completed",
+                                    "agent_name": "orchestrator",
+                                })
+                            elif node_name == "synthesizer":
+                                ans = node_output.get("final_answer", "")
+                                if ans:
+                                    final_answer = ans
+                                trace_steps = node_output.get("reasoning_trace", trace_steps)
 
-                        # Tool calls
-                        if kind == "on_tool_start":
-                            tool_name = event.get("name", "")
-                            tool_input = event.get("data", {}).get("input", "")
-                            friendly = _tool_status(tool_name)
-                            trace_steps.append(f"🔧 {tool_name}({str(tool_input)[:80]})")
-                            await websocket.send_json({
-                                "type": "status",
-                                "content": friendly,
-                                "agent_name": None,
-                            })
+                            if "final_answer" in node_output and node_output["final_answer"]:
+                                final_answer = node_output["final_answer"]
+                            if "reasoning_trace" in node_output:
+                                trace_steps = node_output["reasoning_trace"]
 
-                        elif kind == "on_tool_end":
-                            tool_name = event.get("name", "")
-                            output = event.get("data", {}).get("output", "")
-                            trace_steps.append(f"📋 {tool_name} → {str(output)[:100]}")
-
-                        # Final LLM response (not a tool call)
-                        elif kind == "on_chat_model_end":
-                            output = event.get("data", {}).get("output")
-                            if output and hasattr(output, "content"):
-                                content = output.content
-                                # Extract text from potentially complex content
-                                if isinstance(content, list):
-                                    parts = []
-                                    for part in content:
-                                        if isinstance(part, str):
-                                            parts.append(part)
-                                        elif isinstance(part, dict) and part.get("type") == "text":
-                                            parts.append(part["text"])
-                                    final_answer = " ".join(parts).strip()
-                                elif isinstance(content, str):
-                                    final_answer = content.strip()
-
-                    # If no final answer captured, check the last message
                     if not final_answer:
-                        final_answer = "I couldn't generate an answer. Please try again."
+                        final_answer = "I've processed your request. Please try asking again if anything is missing."
 
-                    # Store ONLY Human + AI final answer in conversation memory
-                    # (tool calls are NOT added — they're ephemeral per turn)
-                    from langchain_core.messages import AIMessage
                     messages.append(AIMessage(content=final_answer))
-
-                    # Trim: keep only last MAX_HISTORY_PAIRS pairs
                     if len(messages) > MAX_HISTORY_PAIRS * 2:
                         messages = messages[-(MAX_HISTORY_PAIRS * 2):]
 
-                    # Build trace
                     trace_display = "\n".join(trace_steps) if trace_steps else ""
 
                 except Exception as e:

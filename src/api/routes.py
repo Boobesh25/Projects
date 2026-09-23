@@ -1089,7 +1089,8 @@ async def chat(req: ChatRequest):
             messages.append(AIMessage(content=msg["content"]))
     messages.append(HumanMessage(content=user_content))
 
-    # ─── Run agent ────────────────────────────────────────────────────
+    # ─── Run multi-agent graph ────────────────────────────────────────
+    from src.graph.state import MultiAgentState
     agent = build_graph(user_id=user_id, api_key=effective_api_key, include_shared=req.include_shared)
     trace_steps = []
     final_answer = ""
@@ -1107,43 +1108,27 @@ async def chat(req: ChatRequest):
         run_config["callbacks"] = [ls_tracer]
 
     try:
-        async for event in agent.astream_events(
-            {"messages": messages},
-            version="v2",
-            config=run_config,
-        ):
-            kind = event.get("event", "")
-            if kind == "on_tool_start":
-                tool_name = event.get("name", "")
-                trace_steps.append(f"🔧 {tool_name}")
-            elif kind == "on_chat_model_end":
-                output = event.get("data", {}).get("output")
-                if output and hasattr(output, "content"):
-                    content = output.content
-                    extracted = ""
-                    if isinstance(content, list):
-                        parts = []
-                        for part in content:
-                            if isinstance(part, str):
-                                parts.append(part)
-                            elif isinstance(part, dict) and part.get("type") == "text":
-                                parts.append(part["text"])
-                        extracted = " ".join(parts).strip()
-                    elif isinstance(content, str):
-                        extracted = content.strip()
-                    if extracted:
-                        final_answer = extracted
+        init_state = MultiAgentState(
+            messages=messages,
+            user_id=user_id,
+            session_id=session_id,
+            include_shared=req.include_shared,
+        )
+        res = await agent.ainvoke(init_state, config=run_config)
+        final_answer = res.get("final_answer") if isinstance(res, dict) else getattr(res, "final_answer", "")
+        trace_steps = res.get("reasoning_trace", []) if isinstance(res, dict) else getattr(res, "reasoning_trace", [])
 
         if not final_answer:
             final_answer = "I couldn't generate an answer. Please try again."
 
     except Exception as e:
         logger.error("chat_agent_error", error=str(e), user_id=user_id)
-        final_answer = "Sorry, something went wrong. Please try again."
+        from src.utils.errors import format_friendly_error_markdown
+        final_answer = format_friendly_error_markdown(e)
 
     # ─── Save + cache ─────────────────────────────────────────────────
     asyncio.create_task(ChatRepository.save_message(user_id, "assistant", final_answer, "agent", session_id=session_id))
-    if "went wrong" not in final_answer and "try again" not in final_answer:
+    if "### " not in final_answer:
         set_cached_answer(user_id, user_content, final_answer, "general")
 
     return ChatResponse(
@@ -1224,12 +1209,12 @@ async def chat_stream(req: ChatRequest):
             yield f"data: {json.dumps({'type': 'answer', 'content': msg, 'session_id': session_id or 'none'})}\n\n"
             return
 
-        yield f"data: {json.dumps({'type': 'status', 'content': '🧠 Understanding your question...'})}\n\n"
+        yield f"data: {json.dumps({'type': 'status', 'content': '🎯 Smart Router: Analyzing intent and decomposing query...'})}\n\n"
 
+        from src.graph.state import MultiAgentState
         agent = build_graph(user_id=user_id, api_key=effective_api_key, include_shared=req.include_shared)
         trace_steps = []
         final_answer = ""
-
 
         run_config = {
             "recursion_limit": 40,
@@ -1244,51 +1229,59 @@ async def chat_stream(req: ChatRequest):
             run_config["callbacks"] = [ls_tracer]
 
         try:
-            async for event in agent.astream_events(
-                {"messages": messages},
-                version="v2",
-                config=run_config,
-            ):
-                kind = event.get("event", "")
-                if kind == "on_tool_start":
-                    tool_name = event.get("name", "")
-                    friendly = _tool_friendly(tool_name)
-                    trace_steps.append(f"🔧 {tool_name}")
-                    yield f"data: {json.dumps({'type': 'status', 'content': friendly})}\n\n"
-                elif kind == "on_tool_end":
-                    tool_name = event.get("name", "")
-                    yield f"data: {json.dumps({'type': 'status', 'content': f'✓ {tool_name} done'})}\n\n"
-                elif kind == "on_chat_model_stream":
-                    chunk = event.get("data", {}).get("chunk")
-                    if chunk and hasattr(chunk, "content"):
-                        content = chunk.content
-                        text_val = ""
-                        if isinstance(content, str):
-                            text_val = content
-                        elif isinstance(content, list):
-                            text_val = "".join([c.get("text", "") for c in content if isinstance(c, dict) and "text" in c])
-                        
-                        # Only stream if it has text and is not making a tool call
-                        if text_val and not getattr(chunk, "tool_calls", None):
-                            yield f"data: {json.dumps({'type': 'token', 'content': text_val})}\n\n"
-                elif kind == "on_chat_model_end":
-                    output = event.get("data", {}).get("output")
-                    if output and hasattr(output, "content"):
-                        content = output.content
-                        extracted = ""
-                        if isinstance(content, list):
-                            parts = []
-                            for part in content:
-                                if isinstance(part, str):
-                                    parts.append(part)
-                                elif isinstance(part, dict) and part.get("type") == "text":
-                                    parts.append(part["text"])
-                            extracted = " ".join(parts).strip()
-                        elif isinstance(content, str):
-                            extracted = content.strip()
-                        # Only overwrite when we got real text (tool-call turns have empty text)
-                        if extracted:
-                            final_answer = extracted
+            init_state = MultiAgentState(
+                messages=messages,
+                user_id=user_id,
+                session_id=session_id,
+                include_shared=req.include_shared,
+            )
+            async for chunk in agent.astream(init_state, stream_mode="updates", config=run_config):
+                for node_name, node_output in chunk.items():
+                    if node_name == "router":
+                        plan = node_output.get("plan")
+                        if plan:
+                            if plan.is_clarification_needed and plan.clarification_question:
+                                final_answer = plan.clarification_question
+                            elif plan.is_complex or len(plan.subtasks) > 1:
+                                agents = list({t.agent for t in plan.subtasks})
+                                yield f"data: {json.dumps({'type': 'status', 'content': f'⚡ Multi-Agent Orchestrator: Running {len(plan.subtasks)} subtasks across {len(agents)} agents...'})}\n\n"
+                            elif plan.subtasks:
+                                single = plan.subtasks[0].agent
+                                if single == "sql_analyst":
+                                    yield f"data: {json.dumps({'type': 'status', 'content': '📊 SQL Analyst: Inspecting schema & querying PostgreSQL tables...'})}\n\n"
+                                elif single == "document_expert":
+                                    yield f"data: {json.dumps({'type': 'status', 'content': '📄 Document Expert: Searching knowledge base & vector store...'})}\n\n"
+                                elif single == "web_researcher":
+                                    yield f"data: {json.dumps({'type': 'status', 'content': '🌐 Web Researcher: Conducting real-time web search via MCP...'})}\n\n"
+                                else:
+                                    yield f"data: {json.dumps({'type': 'status', 'content': '💬 Assistant: Processing response...'})}\n\n"
+                    elif node_name == "sql_analyst":
+                        yield f"data: {json.dumps({'type': 'status', 'content': '✓ SQL Analyst finished querying data tables'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'status', 'content': '✨ Response Synthesizer: Synthesizing findings and citing sources...'})}\n\n"
+                    elif node_name == "document_expert":
+                        yield f"data: {json.dumps({'type': 'status', 'content': '✓ Document Expert finished retrieving information'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'status', 'content': '✨ Response Synthesizer: Synthesizing findings and citing sources...'})}\n\n"
+                    elif node_name == "web_researcher":
+                        yield f"data: {json.dumps({'type': 'status', 'content': '✓ Web Researcher gathered live internet facts'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'status', 'content': '✨ Response Synthesizer: Synthesizing findings and citing sources...'})}\n\n"
+                    elif node_name == "complex_orchestrator":
+                        yield f"data: {json.dumps({'type': 'status', 'content': '✓ Parallel & sequential agent tasks completed'})}\n\n"
+                        yield f"data: {json.dumps({'type': 'status', 'content': '✨ Response Synthesizer: Harmonizing all findings and adding verified citations...'})}\n\n"
+                    elif node_name == "direct":
+                        yield f"data: {json.dumps({'type': 'status', 'content': '✨ Response Synthesizer: Formatting final answer...'})}\n\n"
+                    elif node_name == "synthesizer":
+                        ans = node_output.get("final_answer", "")
+                        if ans:
+                            final_answer = ans
+                        trace_steps = node_output.get("reasoning_trace", trace_steps)
+
+                    if "final_answer" in node_output and node_output["final_answer"]:
+                        final_answer = node_output["final_answer"]
+                    if "reasoning_trace" in node_output:
+                        trace_steps = node_output["reasoning_trace"]
+
+            if not final_answer:
+                final_answer = "I've processed your request. Please try asking again if anything is missing."
 
         except Exception as e:
             logger.error("chat_stream_error", error=str(e), user_id=user_id)
