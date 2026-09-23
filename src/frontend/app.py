@@ -430,31 +430,18 @@ def login_page():
                     st.error("❌ Authentication failed. Please try again.")
             return
 
-        # Option A: Instant Direct Sign-In (Works without Google Cloud Origin whitelisting)
-        st.subheader("⚡ Quick Access")
-        with st.form("direct_login_form"):
-            direct_id = st.text_input(
-                "Enter Email or Username",
-                placeholder="e.g. boobesh@gmail.com",
-                help="Sign in instantly to your personal isolated workspace with Postgres & Redis persistence.",
-            )
-            login_btn = st.form_submit_button("🚀 Enter Chat Workspace", type="primary", use_container_width=True)
-            if login_btn:
-                if authenticate_direct_user(direct_id):
-                    st.rerun()
-
-        st.markdown("<div style='text-align: center; margin: 16px 0; color: #888;'>── OR ──</div>", unsafe_allow_html=True)
-
-        # Option B: Google Single Sign-On
-        st.subheader("🔐 Google Single Sign-On")
+        st.subheader("🔐 Sign in with Google")
+        st.caption("Zero passwords stored — authenticated directly with Google Identity.")
+        st.markdown("")
         login_url = f"{API_BROWSER_URL}/auth/google/login"
         if FRONTEND_URL:
             login_url = f"{login_url}?redirect_to={FRONTEND_URL}"
 
         st.link_button(
-            "🌐 Sign in with Google",
+            "🚀 Sign in with Google",
             url=login_url,
             use_container_width=True,
+            type="primary",
         )
         st.markdown("<br>", unsafe_allow_html=True)
         st.caption("⚡ *Each user has isolated, encrypted storage and private API key management (BYOK).*")

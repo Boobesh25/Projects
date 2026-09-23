@@ -88,6 +88,26 @@ def create_rag_tools(user_id: str, api_key: str = "", include_shared: bool = Tru
     _search_call_count = {"count": 0}
 
     @tool
+    async def list_uploaded_documents() -> str:
+        """
+        List all files and documents uploaded by the user or available in the knowledge base.
+        Use this tool whenever the user asks to list documents, view files, or check what documents are available.
+        """
+        from src.database.repository import DocumentRegistryRepo
+        user_docs = await DocumentRegistryRepo.get_all_documents(user_id)
+        shared_docs = await DocumentRegistryRepo.get_shared_documents() if include_shared else []
+        all_docs = user_docs + shared_docs
+
+        if not all_docs:
+            return "No documents uploaded yet. You can upload PDF, DOCX, CSV, TXT, or MD files in the sidebar."
+
+        lines = ["Available Documents:"]
+        for d in all_docs:
+            scope = "🌐 Shared Demo" if d.get("is_shared") else "📄 Private"
+            lines.append(f"- **{d['filename']}** ({d.get('doc_type', 'unknown').upper()}) [{scope}]")
+        return "\n".join(lines)
+
+    @tool
     async def search_documents(query: str) -> str:
         """
         Search uploaded text documents (TXT, DOCX, MD, PDF) for relevant info.
@@ -104,13 +124,17 @@ def create_rag_tools(user_id: str, api_key: str = "", include_shared: bool = Tru
                 "Do NOT call this tool again."
             )
 
-        results = await vectorstore.query(
-            user_id,
-            query,
-            n_results=5,
-            api_key=api_key,
-            include_shared=include_shared,
-        )
+        try:
+            results = await vectorstore.query(
+                user_id,
+                query,
+                n_results=5,
+                api_key=api_key,
+                include_shared=include_shared,
+            )
+        except Exception as e:
+            return f"No document results found or vector store offline: {e}"
+
         if not results:
             return "No relevant information found in uploaded documents."
 
@@ -119,7 +143,7 @@ def create_rag_tools(user_id: str, api_key: str = "", include_shared: bool = Tru
             output_parts.append(f"[{i}] (File: {r['filename']}, Relevance: {r['score']:.0%})\n{r['content']}")
         return "\n\n---\n\n".join(output_parts)
 
-    return [search_documents]
+    return [list_uploaded_documents, search_documents]
 
 
 def get_all_tools(user_id: str, api_key: str = "", include_shared: bool = True) -> list:

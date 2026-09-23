@@ -352,7 +352,12 @@ class VectorStoreService:
         Hybrid search: top vector + keyword across user (and optionally shared) collections
         → merge & deduplicate → return parent content.
         """
-        all_collections = [c.name for c in self.client.get_collections().collections]
+        try:
+            all_collections = [c.name for c in self.client.get_collections().collections]
+        except Exception as e:
+            logger.warning("qdrant_unreachable", error=str(e))
+            return []
+
         target_collections = []
 
         user_col = self._collection_name(user_id)
