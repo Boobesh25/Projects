@@ -21,13 +21,24 @@ if [ ! -f ".env" ]; then
     echo "⚠️ Warning: .env file not found in current directory! Proceeding with environment defaults."
 fi
 
+# Auto-detect whether server uses 'docker compose' (v2 plugin) or 'docker-compose' (v1/v2 standalone)
+if docker compose version >/dev/null 2>&1; then
+    DC="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+    DC="docker-compose"
+else
+    echo "❌ Neither 'docker compose' nor 'docker-compose' was found on the server!"
+    exit 1
+fi
+echo "Using Compose command: $DC"
+
 # 2. Pull the latest image
 echo "📦 Pulling latest container image..."
-docker compose -f "${COMPOSE_FILE}" pull api
+$DC -f "${COMPOSE_FILE}" pull api
 
 # 3. Gracefully recreate the API container
 echo "🔄 Updating API container..."
-docker compose -f "${COMPOSE_FILE}" up -d --no-deps api
+$DC -f "${COMPOSE_FILE}" up -d --no-deps api
 
 # 4. Perform Health Check
 echo "🩺 Waiting for service health check (${HEALTH_URL})..."

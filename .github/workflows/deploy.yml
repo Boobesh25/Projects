@@ -111,11 +111,38 @@ jobs:
             echo "==== 2. Navigate to Project Directory ===="
             cd ${{ secrets.SERVER_APP_DIR }}
 
+            # Auto-detect whether server uses 'docker compose' (v2 plugin) or 'docker-compose' (v1/v2 standalone)
+            if docker compose version >/dev/null 2>&1; then
+                DC="docker compose"
+            elif command -v docker-compose >/dev/null 2>&1; then
+                DC="docker-compose"
+            else
+                echo "❌ Neither 'docker compose' nor 'docker-compose' was found on the server!"
+                exit 1
+            fi
+            echo "Using Compose command: $DC"
+
+            # Auto-detect compose file
+            COMPOSE_FILE=""
+            for f in docker-compose.api.yml docker-compose.server.yml docker-compose.yml; do
+                if [ -f "$f" ]; then
+                    COMPOSE_FILE="$f"
+                    break
+                fi
+            done
+
+            if [ -z "$COMPOSE_FILE" ]; then
+                echo "❌ No compose file (docker-compose.api.yml / docker-compose.server.yml / docker-compose.yml) found in $(pwd)!"
+                ls -la
+                exit 1
+            fi
+            echo "Using Compose file: $COMPOSE_FILE"
+
             echo "==== 3. Pull Latest Docker Image ===="
-            docker compose -f docker-compose.api.yml pull api || docker compose -f docker-compose.server.yml pull api
+            $DC -f "$COMPOSE_FILE" pull api
 
             echo "==== 4. Restart API Container with Zero Downtime ===="
-            docker compose -f docker-compose.api.yml up -d --no-deps api || docker compose -f docker-compose.server.yml up -d --no-deps api
+            $DC -f "$COMPOSE_FILE" up -d --no-deps api
 
             echo "==== 5. Health Check Verification ===="
             sleep 10
