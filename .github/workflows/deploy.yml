@@ -39,6 +39,7 @@ jobs:
 
       - name: Run Pytest
         env:
+          PYTHONPATH: "."
           JWT_SECRET: "ci-test-secret-key-12345"
           GEMINI_API_KEY: "dummy-test-key"
           DATABASE_URL: "postgresql+asyncpg://postgres:pass@localhost:5432/test"
