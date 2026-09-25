@@ -32,9 +32,11 @@ else
 fi
 echo "Using Compose command: $DC"
 
-# 2. Pull the latest image
-echo "📦 Pulling latest container image..."
-$DC -f "${COMPOSE_FILE}" pull api
+# 2. Pull the latest image from GHCR and tag locally
+echo "📦 Pulling latest container image from GHCR..."
+REGISTRY_IMAGE="ghcr.io/boobesh25/projects/api:${IMAGE_TAG}"
+docker pull "${REGISTRY_IMAGE}" || true
+docker tag "${REGISTRY_IMAGE}" genai_rag_api:latest || true
 
 # 3. Gracefully recreate the API container
 echo "🔄 Updating API container..."
