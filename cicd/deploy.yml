@@ -105,8 +105,11 @@ jobs:
           port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
             set -e
+            ACTOR_LOWER=$(echo "${{ github.actor }}" | tr '[:upper:]' '[:lower:]')
+            IMAGE_LOWER=$(echo "ghcr.io/${{ github.repository }}/api:latest" | tr '[:upper:]' '[:lower:]')
+
             echo "==== 1. Log in to GitHub Container Registry ===="
-            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin
 
             echo "==== 2. Navigate to Project Directory ===="
             cd ${{ secrets.SERVER_APP_DIR }}
@@ -138,9 +141,9 @@ jobs:
             fi
             echo "Using Compose file: $COMPOSE_FILE"
 
-            echo "==== 3. Pull Latest Docker Image from GHCR ===="
-            docker pull ghcr.io/${{ github.repository }}/api:latest
-            docker tag ghcr.io/${{ github.repository }}/api:latest genai_rag_api:latest
+            echo "==== 3. Pull Latest Docker Image from GHCR ($IMAGE_LOWER) ===="
+            docker pull "$IMAGE_LOWER"
+            docker tag "$IMAGE_LOWER" genai_rag_api:latest
 
             echo "==== 4. Restart API Container with Zero Downtime ===="
             $DC -f "$COMPOSE_FILE" up -d --no-deps api
