@@ -1,0 +1,37 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Production Server Docker Compose for FastAPI Backend
+# Pulls pre-built image from GitHub Container Registry (GHCR)
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: '3.8'
+
+services:
+  api:
+    image: ghcr.io/${GITHUB_REPOSITORY:-boobesh25/projects}/api:latest
+    container_name: genai_rag_api
+    restart: always
+    ports:
+      - "8000:8000"
+    network_mode: "host"
+    env_file:
+      - .env
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash-lite}
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production-use-a-random-string}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://postgres:MySecretPassword123@127.0.0.1:5432/genai_chat}
+      - REDIS_URL=${REDIS_URL:-redis://:MyRedisPassword123@127.0.0.1:6379}
+      - QDRANT_URL=${QDRANT_URL:-}
+      - QDRANT_API_KEY=${QDRANT_API_KEY:-}
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - API_BROWSER_URL=${API_BROWSER_URL:-}
+      - FRONTEND_URL=${FRONTEND_URL:-https://projects-bu8jtjbtyqe7otklpukvoq.streamlit.app}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; r = httpx.get('http://127.0.0.1:8000/health'); r.raise_for_status()"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

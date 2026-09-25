@@ -1,27 +1,26 @@
 [
   {
-    "question": "What features are planned for removal in 2026?",
-    "ground_truth": "Uncore PMI. IA32_DEBUGCTL MSR, bit 13 (MSR address 1D9H) is planned for removal from 2026 onwards.",
-    "expected_keywords": ["Uncore PMI", "IA32_DEBUGCTL", "2026"]
+    "question": "According to my uploaded study guide document, what are the core components of RAG?",
+    "ground_truth": "According to the study guide, the core components of RAG are document ingestion/chunking, embedding generation, vector store retrieval, and synthesis with an LLM.",
+    "expected_agent": "document_expert",
+    "expected_keywords": ["retrieval", "augmented", "generation", "vector", "chunking", "study guide"]
   },
   {
-    "question": "What is the removal year for xAPIC mode?",
-    "ground_truth": "xAPIC mode is planned for removal from 2025 onwards.",
-    "expected_keywords": ["xAPIC", "2025"]
+    "question": "Query the uploaded CSV dataset to calculate the total sum of sales revenue and row count.",
+    "ground_truth": "SELECT COUNT(*), SUM(revenue) FROM sales_table; The query calculates the total rows and aggregated revenue.",
+    "expected_agent": "sql_analyst",
+    "expected_keywords": ["SELECT", "COUNT", "SUM", "revenue"]
   },
   {
-    "question": "Which features were removed in 2019?",
-    "ground_truth": "Intel Memory Protection Extensions (Intel MPX), MSR_TEST_CTRL bit 31 (MSR address 33H), and Hardware Lock Elision (HLE) were removed from 2019 onwards.",
-    "expected_keywords": ["Intel MPX", "MSR_TEST_CTRL", "HLE", "2019"]
+    "question": "Search the web for the latest news and release notes on generative AI models this month.",
+    "ground_truth": "Recent web search results show advancements in multimodal reasoning, long-context models, and open-weights releases.",
+    "expected_agent": "web_researcher",
+    "expected_keywords": ["search", "models", "AI", "news"]
   },
   {
-    "question": "What is Sub-page write permissions for EPT removal year?",
-    "ground_truth": "Sub-page write permissions for EPT is planned for removal from 2024 onwards.",
-    "expected_keywords": ["Sub-page", "EPT", "2024"]
-  },
-  {
-    "question": "What is Key Locker removal year?",
-    "ground_truth": "Key Locker is planned for removal from 2025 onwards.",
-    "expected_keywords": ["Key Locker", "2025"]
+    "question": "Hello! What tasks can you assist me with?",
+    "ground_truth": "Hello! I am a multi-agent AI assistant that can help you analyze documents, query SQL/CSV datasets, and search the web.",
+    "expected_agent": "direct",
+    "expected_keywords": ["assistant", "documents", "SQL", "help"]
   }
 ]

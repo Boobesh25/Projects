@@ -1,0 +1,39 @@
+name: Nightly Multi-Agent & RAG Evaluation
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # Runs every night at midnight UTC
+  workflow_dispatch:
+    inputs:
+      user_id:
+        description: 'Test User ID for evaluation run'
+        required: false
+        default: 'ci_eval_test_user'
+
+jobs:
+  rag-eval:
+    name: 📊 Run RAGAS & Multi-Agent Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ragas
+
+      - name: Run Evaluation Script
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+          REDIS_URL: ${{ secrets.TEST_REDIS_URL }}
+        run: |
+          python -m eval.run_eval --user_id "${{ github.event.inputs.user_id || 'ci_eval_test_user' }}"
