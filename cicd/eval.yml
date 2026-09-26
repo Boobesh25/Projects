@@ -2,7 +2,7 @@ name: Nightly Multi-Agent & RAG Evaluation
 
 on:
   schedule:
-    - cron: "0 0 * * *" # Runs every night at midnight UTC
+    - cron: "0 0 * * *" # Runs every night at midnight UTC (5:30 AM IST)
   workflow_dispatch:
     inputs:
       user_id:
@@ -14,6 +14,38 @@ jobs:
   rag-eval:
     name: 📊 Run RAGAS & Multi-Agent Benchmark
     runs-on: ubuntu-latest
+
+    # Ephemeral service containers spun up in GitHub cloud runner for eval
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: genai_chat
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: MySecretPassword123
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports:
+          - 6333:6333
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -28,12 +60,33 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install ragas
+          pip install ragas datasets langchain-community
 
-      - name: Run Evaluation Script
+      - name: Seed Evaluation Data (Postgres Tables & Qdrant Vectors)
         env:
+          PYTHONPATH: "."
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
-          REDIS_URL: ${{ secrets.TEST_REDIS_URL }}
+          DATABASE_URL: "postgresql+asyncpg://postgres:MySecretPassword123@127.0.0.1:5432/genai_chat"
+          REDIS_URL: "redis://:MyRedisPassword123@127.0.0.1:6379"
+          QDRANT_HOST: "localhost"
+          QDRANT_PORT: "6333"
+        run: |
+          python -m eval.seed_eval_data "${{ github.event.inputs.user_id || 'ci_eval_test_user' }}"
+
+      - name: Run Multi-Agent Evaluation & Benchmark
+        env:
+          PYTHONPATH: "."
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DATABASE_URL: "postgresql+asyncpg://postgres:MySecretPassword123@127.0.0.1:5432/genai_chat"
+          REDIS_URL: "redis://:MyRedisPassword123@127.0.0.1:6379"
+          QDRANT_HOST: "localhost"
+          QDRANT_PORT: "6333"
         run: |
           python -m eval.run_eval --user_id "${{ github.event.inputs.user_id || 'ci_eval_test_user' }}"
+
+      - name: Upload Evaluation Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-results
+          path: eval/eval_results.json
