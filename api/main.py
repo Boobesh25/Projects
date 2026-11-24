@@ -324,6 +324,8 @@ async def upload_and_analyze_document(
     res = await session.execute(stmt)
     user = res.scalar_one_or_none()
     api_key = user.api_key if user else None
+    if not api_key:
+        api_key = os.getenv("GEMINI_API_KEY")
 
     yaml_str, skills, profile_dict = DocumentProfileAnalyzer.generate_yaml_profile(
         raw_text=raw_text,

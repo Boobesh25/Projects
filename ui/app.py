@@ -58,13 +58,17 @@ except ImportError:
         clean_markdown_links
     )
 
-# Backend URL (configurable for Docker, Streamlit Cloud, or local deployment)
-API_BASE = os.getenv("API_BASE_URL")
-if not API_BASE:
-    try:
-        API_BASE = st.secrets.get("API_BASE_URL", "http://localhost:8000")
-    except Exception:
-        API_BASE = "http://localhost:8000"
+# Backend URL (configurable via session state, Streamlit Secrets, environment variable, or in-UI input)
+if "api_base_url" not in st.session_state:
+    env_api = os.getenv("API_BASE_URL")
+    if not env_api:
+        try:
+            env_api = st.secrets.get("API_BASE_URL", "")
+        except Exception:
+            env_api = ""
+    st.session_state.api_base_url = env_api.strip() if env_api else "http://localhost:8000"
+
+API_BASE = st.session_state.api_base_url
 
 # Page Config
 st.set_page_config(
@@ -75,41 +79,96 @@ st.set_page_config(
 )
 
 def inject_sidebar_script():
-    """Injects JavaScript to bind custom topbar hamburger to Streamlit's native sidebar collapse/expand."""
+    """Injects robust cross-frame JavaScript to bind custom topbar hamburger to Streamlit's native sidebar collapse/expand."""
     components.html("""
     <script>
     (function() {
-        const parentDoc = window.parent.document;
+        function getParentDocument() {
+            try {
+                return window.parent.document;
+            } catch (e) {
+                return document;
+            }
+        }
+
+        function tryToggleSidebar(doc) {
+            if (!doc) return false;
+            // 1. Check if sidebar is currently open or collapsed
+            const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
+            let isCollapsed = true;
+            if (sidebar) {
+                const style = window.getComputedStyle(sidebar);
+                const transform = style.transform || '';
+                isCollapsed = (sidebar.getAttribute('aria-expanded') === 'false') ||
+                              (style.display === 'none') ||
+                              (style.visibility === 'hidden') ||
+                              (sidebar.offsetWidth === 0) ||
+                              (transform.indexOf('-') > -1);
+            }
+
+            const openSelectors = [
+                '[data-testid="stSidebarCollapsedControl"] button',
+                '[data-testid="collapsedControl"] button',
+                'button[data-testid="stSidebarCollapsedControl"]',
+                'button[data-testid="collapsedControl"]',
+                'button[aria-label="Open sidebar"]',
+                'button[aria-label="Expand sidebar"]',
+                'header [data-testid="baseButton-headerNoPadding"]',
+                'header button[kind="headerNoPadding"]',
+                'header button'
+            ];
+
+            const closeSelectors = [
+                '[data-testid="stSidebarCollapseButton"] button',
+                'button[data-testid="stSidebarCollapseButton"]',
+                'button[aria-label="Close sidebar"]',
+                'button[aria-label="Collapse sidebar"]',
+                'section[data-testid="stSidebar"] button[kind="header"]',
+                'section[data-testid="stSidebar"] button'
+            ];
+
+            const targetSelectors = isCollapsed ? openSelectors : closeSelectors;
+            for (let i = 0; i < targetSelectors.length; i++) {
+                const btn = doc.querySelector(targetSelectors[i]);
+                if (btn && btn.offsetParent !== null) {
+                    btn.click();
+                    return true;
+                }
+            }
+
+            // Fallback: try alternative list
+            const fallbackSelectors = isCollapsed ? closeSelectors : openSelectors;
+            for (let j = 0; j < fallbackSelectors.length; j++) {
+                const btn = doc.querySelector(fallbackSelectors[j]);
+                if (btn) {
+                    btn.click();
+                    return true;
+                }
+            }
+            return false;
+        }
+
         function bindSidebarToggle() {
-            const toggleBtns = parentDoc.querySelectorAll('.console-hamburger-btn, #consoleSidebarToggle');
+            const doc = getParentDocument();
+            if (!doc) return;
+
+            const toggleBtns = doc.querySelectorAll('.console-hamburger-btn, #consoleSidebarToggle, .mobile-menu-toggle-btn');
             toggleBtns.forEach(btn => {
                 if (!btn.dataset.bound) {
                     btn.dataset.bound = 'true';
-                    btn.addEventListener('click', function(e) {
+                    const handler = function(e) {
                         e.preventDefault();
                         e.stopPropagation();
-                        // 1. Try to open if collapsed
-                        const openBtn = parentDoc.querySelector('[data-testid="stSidebarCollapsedControl"] button') ||
-                                        parentDoc.querySelector('[data-testid="collapsedControl"] button') ||
-                                        parentDoc.querySelector('button[aria-label="Open sidebar"]') ||
-                                        parentDoc.querySelector('button[data-testid="baseButton-headerNoPadding"]');
-                        if (openBtn) {
-                            openBtn.click();
-                            return;
-                        }
-                        // 2. Try to close if expanded
-                        const closeBtn = parentDoc.querySelector('[data-testid="stSidebarCollapseButton"] button') ||
-                                         parentDoc.querySelector('button[aria-label="Close sidebar"]') ||
-                                         parentDoc.querySelector('section[data-testid="stSidebar"] button[kind="header"]');
-                        if (closeBtn) {
-                            closeBtn.click();
-                        }
-                    });
+                        tryToggleSidebar(doc);
+                    };
+                    btn.addEventListener('click', handler);
+                    btn.addEventListener('touchend', handler);
                 }
             });
         }
+
         bindSidebarToggle();
-        setInterval(bindSidebarToggle, 350);
+        setInterval(bindSidebarToggle, 300);
     })();
     </script>
     """, height=0, width=0)
@@ -183,7 +242,7 @@ header[data-testid="stHeader"] {
     height: 0px !important;
     min-height: 0px !important;
     overflow: visible !important;
-    z-index: 99999 !important;
+    z-index: 100000 !important;
 }
 div[data-testid="stToolbar"] {
     display: none !important;
@@ -201,21 +260,33 @@ footer {
 
 /* Ensure the collapsed sidebar toggle is styled, visible, and always clickable */
 [data-testid="stSidebarCollapsedControl"],
-[data-testid="collapsedControl"] {
+[data-testid="collapsedControl"],
+button[data-testid="stSidebarCollapsedControl"] {
     display: flex !important;
     visibility: visible !important;
     position: fixed !important;
-    top: 10px !important;
-    left: 10px !important;
-    z-index: 100001 !important;
+    top: 8px !important;
+    left: 8px !important;
+    z-index: 100002 !important;
+    pointer-events: auto !important;
+    touch-action: manipulation !important;
 }
 [data-testid="stSidebarCollapsedControl"] button,
-[data-testid="collapsedControl"] button {
+[data-testid="collapsedControl"] button,
+button[data-testid="stSidebarCollapsedControl"] {
     background: #1A73E8 !important;
     color: #FFFFFF !important;
     border: none !important;
-    border-radius: 4px !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.5) !important;
+    border-radius: 6px !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.5) !important;
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
 }
 
 /* Console Sidebar Styling */
@@ -988,6 +1059,112 @@ div[data-baseweb="input"] > div {
     margin: 3px 0 6px 0;
     line-height: 1.45;
 }
+
+/* =========================================================================
+   Mobile Viewport Responsive Alignment & Controls (< 768px)
+   ========================================================================= */
+@media screen and (max-width: 768px) {
+    /* Mobile main container margins & padding */
+    .block-container {
+        padding-top: 0.5rem !important;
+        padding-bottom: 2rem !important;
+        padding-left: 0.6rem !important;
+        padding-right: 0.6rem !important;
+        max-width: 100% !important;
+    }
+
+    /* Top App Bar on Mobile */
+    .console-top-bar {
+        height: auto !important;
+        min-height: 44px !important;
+        padding: 6px 10px !important;
+        flex-wrap: wrap !important;
+        gap: 6px !important;
+        margin-bottom: 12px !important;
+    }
+    .console-project-pill {
+        display: none !important;
+    }
+    .console-user-email-top {
+        display: none !important;
+    }
+    .console-logo-title {
+        font-size: 14px !important;
+    }
+    .console-hamburger-btn {
+        width: 36px !important;
+        height: 36px !important;
+        min-width: 36px !important;
+        min-height: 36px !important;
+    }
+
+    /* Streamlit Columns responsive stacking on Mobile */
+    [data-testid="column"] {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+        min-width: 100% !important;
+        margin-bottom: 6px !important;
+    }
+
+    /* Metric Boxes Grid on Mobile (2 per row instead of 6 squished columns) */
+    [data-testid="stHorizontalBlock"]:has(.console-metric-box) {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 6px !important;
+    }
+    [data-testid="stHorizontalBlock"]:has(.console-metric-box) > div {
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+    .console-metric-box {
+        padding: 8px 10px !important;
+        margin-bottom: 4px !important;
+    }
+    .console-metric-val {
+        font-size: 1.2rem !important;
+    }
+    .console-metric-lbl {
+        font-size: 10px !important;
+    }
+
+    /* Responsive Data Tables with smooth horizontal touch-scrolling */
+    .console-table-wrap,
+    .console-table-container,
+    .job-table-wrap,
+    table {
+        display: block !important;
+        width: 100% !important;
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+    }
+
+    /* Action buttons: full-width and touch-friendly */
+    .stButton > button {
+        width: 100% !important;
+        min-height: 40px !important;
+        font-size: 13px !important;
+    }
+
+    /* Mobile Sidebar overlay */
+    section[data-testid="stSidebar"] {
+        width: 85vw !important;
+        max-width: 320px !important;
+        box-shadow: 4px 0 20px rgba(0,0,0,0.7) !important;
+    }
+
+    /* Page title & subheader */
+    .console-title {
+        font-size: 16px !important;
+    }
+    .console-page-title-row {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 6px !important;
+    }
+    .console-desc-text {
+        font-size: 11.5px !important;
+    }
+}
 </style>
 """
 render_html(CONSOLE_THEME_CSS)
@@ -1484,8 +1661,9 @@ def render_login():
                     if not clean_email:
                         st.error("Please enter your account email.")
                     else:
+                        active_api = st.session_state.get("api_base_url", API_BASE).rstrip("/")
                         try:
-                            r = requests.post(f"{API_BASE}/api/auth/dev-login", json={"email": clean_email}, timeout=5)
+                            r = requests.post(f"{active_api}/api/auth/dev-login", json={"email": clean_email}, timeout=8)
                             if r.status_code == 200:
                                 data = r.json()
                                 st.session_state.token = data["token"]
@@ -1506,19 +1684,35 @@ def render_login():
                                 st.error(f"Sign-in failed ({r.status_code}): {r.text}")
                         except Exception as e:
                             st.error(f"""
-                            **Cannot connect to API service at `{API_BASE}`**
+                            **Cannot connect to API service at `{active_api}`**
                             
                             **Error:** {e}
                             
-                            **How to fix for Streamlit Community Cloud:**
-                            1. Open your app settings on **share.streamlit.io** -> **Settings -> Secrets**.
-                            2. Set your Cloudflare Tunnel URL:
-                            ```toml
-                            API_BASE_URL = "https://<your-jobradar-tunnel>.trycloudflare.com"
-                            DEFAULT_USER_EMAIL = "your-email@example.com"
-                            ```
-                            3. Save and reboot your app.
+                            **Tips:**
+                            - If running on Streamlit Cloud, expand the **API Server Connection Settings** below and enter your active Cloudflare tunnel URL.
+                            - Or configure `API_BASE_URL` in your Streamlit Cloud Secrets.
                             """)
+
+            # Direct In-UI API Server Connection Settings
+            curr_endpoint = st.session_state.get("api_base_url", API_BASE)
+            is_local = "localhost" in curr_endpoint or "127.0.0.1" in curr_endpoint
+            with st.expander("API Server Connection Settings (Cloudflare Tunnel / Custom URL)", expanded=is_local):
+                st.caption("Configure the backend API URL when deploying frontend on Streamlit Cloud:")
+                custom_url = st.text_input("Backend API Endpoint", value=curr_endpoint, placeholder="https://<tunnel-id>.trycloudflare.com", key="login_api_url_input")
+                if st.button("Apply & Test Endpoint", key="apply_api_endpoint_btn", use_container_width=True):
+                    sanitized_url = custom_url.strip().rstrip("/")
+                    if sanitized_url:
+                        st.session_state.api_base_url = sanitized_url
+                        try:
+                            t_r = requests.get(f"{sanitized_url}/api/health", timeout=5)
+                            if t_r.status_code == 200:
+                                st.success(f"Connection OK: {t_r.json().get('status', 'healthy')}")
+                            else:
+                                st.warning(f"Server responded with status {t_r.status_code}")
+                        except Exception as conn_err:
+                            st.warning(f"Endpoint saved, but test request failed: {conn_err}")
+                        time.sleep(0.5)
+                        st.rerun()
 
 # -----------------------------------------------------------------------------
 # Main Application Console (High-Density JobRadar Console)
@@ -1711,6 +1905,45 @@ def render_main_dashboard():
     render_html(top_bar_html)
 
     # -------------------------------------------------------------------------
+    # MOBILE & RESPONSIVE QUICK NAVIGATION SWITCHER
+    # (Guarantees instant section switching on mobile & when sidebar is collapsed)
+    # -------------------------------------------------------------------------
+    if st.session_state.is_onboarded:
+        q_c1, q_c2 = st.columns([3, 1])
+        with q_c1:
+            q_nav_idx = 0
+            for i, opt in enumerate(menu_options):
+                if opt.lower() == selected_menu.lower():
+                    q_nav_idx = i
+                    break
+            quick_nav = st.selectbox(
+                "Console Navigation",
+                menu_options,
+                index=q_nav_idx,
+                key="console_quick_nav_select",
+                label_visibility="collapsed"
+            )
+            if quick_nav != selected_menu:
+                st.session_state.nav_selection = quick_nav
+                st.rerun()
+        with q_c2:
+            if st.button("Sidebar Menu", key="quick_open_sidebar_btn", use_container_width=True, type="secondary"):
+                components.html("""
+                <script>
+                (function() {
+                    try {
+                        const parentDoc = window.parent.document;
+                        const openBtn = parentDoc.querySelector('[data-testid="stSidebarCollapsedControl"] button') ||
+                                        parentDoc.querySelector('[data-testid="collapsedControl"] button') ||
+                                        parentDoc.querySelector('button[aria-label="Open sidebar"]') ||
+                                        parentDoc.querySelector('header button');
+                        if (openBtn) openBtn.click();
+                    } catch(e) {}
+                })();
+                </script>
+                """, height=0, width=0)
+
+    # -------------------------------------------------------------------------
     # BREADCRUMB & SUB-HEADER
     # -------------------------------------------------------------------------
     page_clean_title = selected_menu
@@ -1751,8 +1984,9 @@ def render_main_dashboard():
             if doc_file and st.button("Extract Skills & Compile Candidate Profile", type="primary"):
                 with st.spinner("Extracting text and compiling candidate YAML schema..."):
                     try:
+                        active_api = st.session_state.get("api_base_url", API_BASE).rstrip("/")
                         files = {"file": (doc_file.name, doc_file.getvalue(), doc_file.type)}
-                        r = requests.post(f"{API_BASE}/api/profile/upload", files=files, headers=get_auth_headers(), timeout=25)
+                        r = requests.post(f"{active_api}/api/profile/upload", files=files, headers=get_auth_headers(), timeout=30)
                         if r.status_code == 200:
                             data = r.json()
                             st.session_state.onboard_yaml = data["profile_yaml"]
@@ -1766,31 +2000,93 @@ def render_main_dashboard():
             if "onboard_yaml" in st.session_state and st.session_state.onboard_yaml:
                 meta = st.session_state.onboard_meta
                 st.markdown("<hr style='border-color: #282D3B; margin: 18px 0;'>", unsafe_allow_html=True)
-                st.markdown("<div style='font-size: 13.5px; font-weight: 500; color: #E8EAED; margin-bottom: 6px;'>2. Review Extracted Candidate Profile</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-size: 13.5px; font-weight: 500; color: #E8EAED; margin-bottom: 6px;'>2. Review Extracted Candidate Profile (All Sections)</div>", unsafe_allow_html=True)
                 
+                parsed_preview = {}
+                try:
+                    parsed_preview = yaml.safe_load(st.session_state.onboard_yaml) or {}
+                except Exception:
+                    pass
+
+                exp_list = parsed_preview.get("experience", [])
+                proj_list = parsed_preview.get("projects", [])
+                edu_list = parsed_preview.get("education", [])
+                skills_list = meta.get("verified_skills", [])
+
                 col_n1, col_n2 = st.columns(2)
                 with col_n1:
                     c_name_input = st.text_input("Candidate Display Name", value=meta.get("candidate_name", user_name), key="onboard_name")
                 with col_n2:
                     c_title_input = st.text_input("Professional Title", value=meta.get("professional_title", "AI Engineer"), key="onboard_title")
 
-                skills_list = meta.get("verified_skills", [])
-                skill_chips = "".join([f'<span class="chip-green">{s}</span>' for s in skills_list])
-                st.markdown(f"<div style='font-size: 11.5px; color: #9AA0A6; margin: 10px 0 6px 0;'>VERIFIED EXTRACTED SKILLS ({len(skills_list)}):</div>", unsafe_allow_html=True)
-                st.markdown(f"<div style='margin-bottom: 12px;'>{skill_chips}</div>", unsafe_allow_html=True)
+                # Section Tabs for comprehensive visibility
+                tab_skills, tab_exp, tab_proj, tab_edu, tab_yaml = st.tabs([
+                    f"Skills ({len(skills_list)})",
+                    f"Experience ({len(exp_list)})",
+                    f"Projects ({len(proj_list)})",
+                    f"Education ({len(edu_list)})",
+                    "Raw YAML Truth"
+                ])
 
-                revised_yaml = st.text_area("Review Extracted YAML Profile Ground Truth", value=st.session_state.onboard_yaml, height=220)
+                with tab_skills:
+                    skill_chips = "".join([f'<span class="chip-green">{s}</span>' for s in skills_list])
+                    st.markdown(f"<div style='font-size: 11.5px; color: #9AA0A6; margin: 6px 0 8px 0;'>VERIFIED EXTRACTED SKILLS ({len(skills_list)}):</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='margin-bottom: 12px;'>{skill_chips}</div>", unsafe_allow_html=True)
+
+                with tab_exp:
+                    if exp_list:
+                        for exp_item in exp_list:
+                            c_role = exp_item.get("role", "Engineer")
+                            c_comp = exp_item.get("company", "Company")
+                            c_per = exp_item.get("period", {})
+                            c_per_str = c_per.get("display", "") if isinstance(c_per, dict) else str(c_per)
+                            st.markdown(f"**{c_role}** @ **{c_comp}** *({c_per_str})*")
+                            for b in exp_item.get("bullets", []):
+                                st.markdown(f"- {b}")
+                            st.markdown("---")
+                    else:
+                        st.info("No employment experience found in document.")
+
+                with tab_proj:
+                    if proj_list:
+                        for proj_item in proj_list:
+                            p_name = proj_item.get("name", "Project")
+                            p_stack = proj_item.get("tech_stack", "")
+                            st.markdown(f"**{p_name}**" + (f" *({p_stack})*" if p_stack else ""))
+                            if proj_item.get("repo"):
+                                st.markdown(f"Repository: {proj_item.get('repo')}")
+                            for b in proj_item.get("bullets", []):
+                                st.markdown(f"- {b}")
+                            st.markdown("---")
+                    else:
+                        st.info("No projects section found in document.")
+
+                with tab_edu:
+                    if edu_list:
+                        for edu_item in edu_list:
+                            deg = edu_item.get("degree", "Degree")
+                            inst = edu_item.get("institution", "University")
+                            yr = edu_item.get("period") or edu_item.get("year", "")
+                            st.markdown(f"**{deg}** — {inst} *({yr})*")
+                            if edu_item.get("relevance"):
+                                st.caption(edu_item.get("relevance"))
+                    else:
+                        st.info("No education section found in document.")
+
+                with tab_yaml:
+                    revised_yaml = st.text_area("Review Extracted YAML Profile Ground Truth", value=st.session_state.onboard_yaml, height=260)
                 
                 if st.button("Confirm & Activate Profile", type="primary"):
                     try:
+                        active_api = st.session_state.get("api_base_url", API_BASE).rstrip("/")
                         payload = {
                             "candidate_name": c_name_input or meta.get("candidate_name", user_name),
                             "professional_title": c_title_input or meta.get("professional_title", "AI Engineer"),
                             "experience_years": meta.get("experience_years", 3.0),
                             "verified_skills": skills_list,
-                            "profile_yaml": revised_yaml
+                            "profile_yaml": revised_yaml if 'revised_yaml' in locals() else st.session_state.onboard_yaml
                         }
-                        r_save = requests.post(f"{API_BASE}/api/profile/save", json=payload, headers=get_auth_headers(), timeout=10)
+                        r_save = requests.post(f"{active_api}/api/profile/save", json=payload, headers=get_auth_headers(), timeout=10)
                         if r_save.status_code == 200:
                             st.session_state.is_onboarded = True
                             st.session_state.onboard_yaml = None
@@ -2447,13 +2743,14 @@ def render_main_dashboard():
         if new_doc and st.button("Extract Text & Recompile YAML", type="primary"):
             with st.spinner("Extracting text and compiling fresh YAML schema..."):
                 try:
+                    active_api = st.session_state.get("api_base_url", API_BASE).rstrip("/")
                     files = {"file": (new_doc.name, new_doc.getvalue(), new_doc.type)}
-                    r = requests.post(f"{API_BASE}/api/profile/upload", files=files, headers=get_auth_headers(), timeout=20)
+                    r = requests.post(f"{active_api}/api/profile/upload", files=files, headers=get_auth_headers(), timeout=30)
                     if r.status_code == 200:
                         data = r.json()
                         st.session_state.reupload_yaml = data["profile_yaml"]
                         st.session_state.reupload_meta = data
-                        st.success(f"Successfully extracted {len(data['verified_skills'])} verified skills!")
+                        st.success(f"Successfully extracted {len(data['verified_skills'])} verified skills across all sections!")
                     else:
                         st.error(f"Extraction failed: {r.text}")
                 except Exception as e:
@@ -2461,17 +2758,61 @@ def render_main_dashboard():
 
         if "reupload_yaml" in st.session_state and st.session_state.reupload_yaml:
             meta = st.session_state.reupload_meta
-            revised_yaml = st.text_area("Review Extracted YAML Profile", value=st.session_state.reupload_yaml, height=200)
+            re_parsed = {}
+            try:
+                re_parsed = yaml.safe_load(st.session_state.reupload_yaml) or {}
+            except Exception:
+                pass
+
+            re_exp = re_parsed.get("experience", [])
+            re_proj = re_parsed.get("projects", [])
+            re_edu = re_parsed.get("education", [])
+            re_skills = meta.get("verified_skills", [])
+
+            t_sk, t_ex, t_pr, t_ed, t_ym = st.tabs([
+                f"Skills ({len(re_skills)})",
+                f"Experience ({len(re_exp)})",
+                f"Projects ({len(re_proj)})",
+                f"Education ({len(re_edu)})",
+                "Review YAML"
+            ])
+
+            with t_sk:
+                chips = "".join([f'<span class="chip-green">{s}</span>' for s in re_skills])
+                st.markdown(f"<div style='margin-bottom: 12px;'>{chips}</div>", unsafe_allow_html=True)
+
+            with t_ex:
+                for exp_item in re_exp:
+                    st.markdown(f"**{exp_item.get('role')}** @ **{exp_item.get('company')}**")
+                    for b in exp_item.get("bullets", []):
+                        st.markdown(f"- {b}")
+                    st.markdown("---")
+
+            with t_pr:
+                for pr in re_proj:
+                    st.markdown(f"**{pr.get('name')}**" + (f" *({pr.get('tech_stack')})*" if pr.get('tech_stack') else ""))
+                    for b in pr.get("bullets", []):
+                        st.markdown(f"- {b}")
+                    st.markdown("---")
+
+            with t_ed:
+                for ed in re_edu:
+                    st.markdown(f"**{ed.get('degree')}** — {ed.get('institution')} *({ed.get('period') or ed.get('year')})*")
+
+            with t_ym:
+                revised_yaml = st.text_area("Review Extracted YAML Profile", value=st.session_state.reupload_yaml, height=240)
+
             if st.button("Confirm & Save to PostgreSQL", type="primary"):
                 try:
+                    active_api = st.session_state.get("api_base_url", API_BASE).rstrip("/")
                     payload = {
                         "candidate_name": meta["candidate_name"],
                         "professional_title": meta["professional_title"],
                         "experience_years": meta["experience_years"],
                         "verified_skills": meta["verified_skills"],
-                        "profile_yaml": revised_yaml
+                        "profile_yaml": revised_yaml if 'revised_yaml' in locals() else st.session_state.reupload_yaml
                     }
-                    r = requests.post(f"{API_BASE}/api/profile/save", json=payload, headers=get_auth_headers(), timeout=8)
+                    r = requests.post(f"{active_api}/api/profile/save", json=payload, headers=get_auth_headers(), timeout=10)
                     if r.status_code == 200:
                         st.success("Candidate Profile updated successfully in database!")
                         st.session_state.reupload_yaml = None
