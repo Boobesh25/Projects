@@ -140,7 +140,7 @@ jobs:
 
             # Try GITHUB_TOKEN first (automatically generated with packages:write permissions for this run)
             echo "Authenticating to GHCR with GITHUB_TOKEN..."
-            if echo "${{ github.token }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin 2>/dev/null; then
+            if echo "${{ github.token }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin; then
                 echo "Successfully authenticated to GHCR via GITHUB_TOKEN"
                 LOGIN_OK=true
             else
@@ -150,16 +150,16 @@ jobs:
             # Fallback to GHCR_TOKEN repository secret if GITHUB_TOKEN failed
             if [ "$LOGIN_OK" = false ] && [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
                 echo "Authenticating to GHCR with GHCR_TOKEN secret..."
-                if echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin 2>/dev/null; then
+                if echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin; then
                     echo "Successfully authenticated to GHCR via GHCR_TOKEN"
                     LOGIN_OK=true
                 else
-                    echo "Notice: GHCR_TOKEN login failed (PAT may be expired)."
+                    echo "Notice: GHCR_TOKEN login failed. Check that token is Classic (ghp_...) with read:packages."
                 fi
             fi
 
             if [ "$LOGIN_OK" = false ]; then
-                echo "Warning: Neither token succeeded. Proceeding (if package is public or cached, pull will succeed)..."
+                echo "Notice: Proceeding with pull (if package visibility is set to Public, pull succeeds without login)."
             fi
 
             echo "==== 2. Setup Dedicated Application Directory on Server ===="
