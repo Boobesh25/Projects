@@ -227,7 +227,9 @@ jobs:
                     condition: service_healthy
             EOF
 
-            echo "==== 3. Pull Latest Docker Images from GHCR ===="
+            echo "==== 3. Clean Old Images & Pull Latest from GHCR ===="
+            docker image prune -f || true
+            docker system prune -f || true
             docker pull "$API_IMAGE"
             docker pull "$UI_IMAGE"
             docker tag "$API_IMAGE" jobradar_api:latest || true
