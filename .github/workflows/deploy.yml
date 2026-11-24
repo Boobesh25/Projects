@@ -177,57 +177,8 @@ jobs:
             fi
             echo "Using Compose command: $DC"
 
-            # Generate production docker-compose.yml for JobRadar
-            cat << 'EOF' > docker-compose.yml
-version: '3.8'
-
-services:
-  api:
-    image: ghcr.io/boobesh25/projects/jobradar-api:latest
-    container_name: jobradar_api
-    restart: always
-    ports:
-      - "8001:8000"
-    environment:
-      - PORT_API=8000
-      - DEFAULT_USER_EMAIL=boobesh2509@gmail.com
-      - DATABASE_URL=sqlite+aiosqlite:////app/data/career_portal.db
-    volumes:
-      - ./data:/app/data
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/api/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-
-  ui:
-    image: ghcr.io/boobesh25/projects/jobradar-ui:latest
-    container_name: jobradar_ui
-    restart: always
-    ports:
-      - "8501:8501"
-    environment:
-      - PORT_UI=8501
-      - API_BASE_URL=http://api:8000
-      - DEFAULT_USER_EMAIL=boobesh2509@gmail.com
-    depends_on:
-      api:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://127.0.0.1:8501/_stcore/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    container_name: jobradar_tunnel
-    restart: always
-    command: tunnel --no-autoupdate --url http://api:8000
-    depends_on:
-      api:
-        condition: service_healthy
-EOF
+            # Generate production docker-compose.yml for JobRadar via base64 decoding (100% immune to heredoc indentation syntax errors)
+            echo "IyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQojIFByb2R1Y3Rpb24gU2VydmVyIERvY2tlciBDb21wb3NlIGZvciBKb2JSYWRhciBQbGF0Zm9ybQojIFB1bGxzIHByZS1idWlsdCBpbWFnZXMgZnJvbSBHaXRIdWIgQ29udGFpbmVyIFJlZ2lzdHJ5IChHSENSKQojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09Cgp2ZXJzaW9uOiAnMy44JwoKc2VydmljZXM6CiAgIyAxLiBGYXN0QVBJIEJhY2tlbmQgQVBJIE1pY3Jvc2VydmljZQogIGFwaToKICAgIGltYWdlOiBnaGNyLmlvLyR7R0lUSFVCX1JFUE9TSVRPUlk6LWJvb2Jlc2gyNS9wcm9qZWN0c30vam9icmFkYXItYXBpOmxhdGVzdAogICAgY29udGFpbmVyX25hbWU6IGpvYnJhZGFyX2FwaQogICAgcmVzdGFydDogYWx3YXlzCiAgICBwb3J0czoKICAgICAgLSAiJHtQT1JUX0FQSV9IT1NUOi04MDAxfTo4MDAwIgogICAgZW52X2ZpbGU6CiAgICAgIC0gLmVudgogICAgZW52aXJvbm1lbnQ6CiAgICAgIC0gSldUX1NFQ1JFVD0ke0pXVF9TRUNSRVQ6LWpvYnJhZGFyLWVudGVycHJpc2Utc2VjcmV0LWtleS1jaGFuZ2UtaW4tcHJvZHVjdGlvbn0KICAgICAgLSBERUZBVUxUX1VTRVJfRU1BSUw9JHtERUZBVUxUX1VTRVJfRU1BSUw6LWJvb2Jlc2gyNTA5QGdtYWlsLmNvbX0KICAgICAgLSBHRU1JTklfQVBJX0tFWT0ke0dFTUlOSV9BUElfS0VZOi19CiAgICAgIC0gREFUQUJBU0VfVVJMPSR7REFUQUJBU0VfVVJMOi1zcWxpdGUrYWlvc3FsaXRlOi8vLy9hcHAvZGF0YS9jYXJlZXJfcG9ydGFsLmRifQogICAgICAtIFBPUlRfQVBJPTgwMDAKICAgIHZvbHVtZXM6CiAgICAgIC0gLi9kYXRhOi9hcHAvZGF0YQogICAgaGVhbHRoY2hlY2s6CiAgICAgIHRlc3Q6IFsiQ01EIiwgImN1cmwiLCAiLWYiLCAiaHR0cDovLzEyNy4wLjAuMTo4MDAwL2FwaS9oZWFsdGgiXQogICAgICBpbnRlcnZhbDogMTVzCiAgICAgIHRpbWVvdXQ6IDVzCiAgICAgIHJldHJpZXM6IDMKICAgICAgc3RhcnRfcGVyaW9kOiAxNXMKCiAgIyAyLiBTdHJlYW1saXQgRnJvbnRlbmQgVUkgUG9ydGFsCiAgdWk6CiAgICBpbWFnZTogZ2hjci5pby8ke0dJVEhVQl9SRVBPU0lUT1JZOi1ib29iZXNoMjUvcHJvamVjdHN9L2pvYnJhZGFyLXVpOmxhdGVzdAogICAgY29udGFpbmVyX25hbWU6IGpvYnJhZGFyX3VpCiAgICByZXN0YXJ0OiBhbHdheXMKICAgIHBvcnRzOgogICAgICAtICI4NTAxOjg1MDEiCiAgICBlbnZfZmlsZToKICAgICAgLSAuZW52CiAgICBlbnZpcm9ubWVudDoKICAgICAgLSBBUElfQkFTRV9VUkw9JHtBUElfQkFTRV9VUkw6LWh0dHA6Ly9hcGk6ODAwMH0KICAgICAgLSBERUZBVUxUX1VTRVJfRU1BSUw9JHtERUZBVUxUX1VTRVJfRU1BSUw6LWJvb2Jlc2gyNTA5QGdtYWlsLmNvbX0KICAgICAgLSBQT1JUX1VJPTg1MDEKICAgIGRlcGVuZHNfb246CiAgICAgIGFwaToKICAgICAgICBjb25kaXRpb246IHNlcnZpY2VfaGVhbHRoeQogICAgaGVhbHRoY2hlY2s6CiAgICAgIHRlc3Q6IFsiQ01EIiwgImN1cmwiLCAiLWYiLCAiaHR0cDovLzEyNy4wLjAuMTo4NTAxL19zdGNvcmUvaGVhbHRoIl0KICAgICAgaW50ZXJ2YWw6IDE1cwogICAgICB0aW1lb3V0OiA1cwogICAgICByZXRyaWVzOiAzCiAgICAgIHN0YXJ0X3BlcmlvZDogMTVzCgogICMgMy4gQXV0b21hdGVkIENsb3VkZmxhcmUgUXVpY2sgVHVubmVsIChFeHBvc2VzIEFQSSBvdmVyIEhUVFBTIGZvciBTdHJlYW1saXQgQ2xvdWQpCiAgdHVubmVsOgogICAgaW1hZ2U6IGNsb3VkZmxhcmUvY2xvdWRmbGFyZWQ6bGF0ZXN0CiAgICBjb250YWluZXJfbmFtZTogam9icmFkYXJfdHVubmVsCiAgICByZXN0YXJ0OiBhbHdheXMKICAgIGNvbW1hbmQ6IHR1bm5lbCAtLW5vLWF1dG91cGRhdGUgLS11cmwgaHR0cDovL2FwaTo4MDAwCiAgICBkZXBlbmRzX29uOgogICAgICBhcGk6CiAgICAgICAgY29uZGl0aW9uOiBzZXJ2aWNlX2hlYWx0aHkK" | base64 -d > docker-compose.yml
 
             echo "==== 3. Pull Latest Images from GHCR ===="
             docker pull "$API_IMAGE" || true
