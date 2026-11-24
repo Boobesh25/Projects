@@ -1,0 +1,44 @@
+{
+  "company": "Infosys Limited",
+  "title": "Python ML /GenAI",
+  "job_id": "INFSYS-EXTERNAL-255682",
+  "url": "https://career.infosys.com/jobdesc?jobReferenceCode=INFSYS-EXTERNAL-255682",
+  "location": "Bangalore, India",
+  "work_experience": "1 - 3 Years",
+  "min_experience_years": 1.0,
+  "max_experience_years": 3.0,
+  "service_line": "Data & Analytics Unit",
+  "educational_requirements": [
+    "BTech",
+    "MCA",
+    "MTech",
+    "MSc"
+  ],
+  "responsibilities": [
+    "Develop and maintain Generative AI applications using Python.",
+    "Build AI-powered chatbots, virtual assistants, and automation solutions.",
+    "Integrate Large Language Models (OpenAI, Azure OpenAI, Claude, Gemini, Llama, etc.) into applications.",
+    "Design and optimize prompts to improve model performance and accuracy.",
+    "Implement Retrieval-Augmented Generation (RAG) solutions using vector databases.",
+    "Work with frameworks like LangChain, LlamaIndex, and Semantic Kernel.",
+    "Develop REST APIs and integrate AI services with web applications.",
+    "Collaborate with cross-functional teams to understand business requirements and deliver AI-driven solutions.",
+    "Perform testing, debugging, and performance optimization of AI applications."
+  ],
+  "technical_and_professional_requirements": [
+    "Strong proficiency in Python programming.",
+    "Knowledge of Generative AI concepts, LLMs, and Prompt Engineering.",
+    "Experience with OpenAI/Azure OpenAI APIs.",
+    "Hands-on experience with LangChain, LlamaIndex, or similar frameworks.",
+    "Knowledge of RAG Architecture and vector databases such as Pinecone, ChromaDB, FAISS, or Azure AI Search.",
+    "Experience with REST APIs, FastAPI, or Flask.",
+    "Understanding of Git and version control systems.",
+    "Familiarity with cloud platforms such as Azure, AWS, or GCP."
+  ],
+  "preferred_skills": [
+    "Technology->AI-Data science->PYTHON - AI-Data Science",
+    "Technology->AI-Data science->Machine Learning",
+    "Technology->AI-Generative AI->Generative AI for Data Analytics"
+  ],
+  "raw_text": "BANGALORE, Infosys Limited\nPython ML /GenAI\nJob ID/Reference Code: INFSYS-EXTERNAL-255682\nWork Experience: 1 - 3 Years\nJob Title: Python ML /GenAI\nEducational Requirements: BTech,MCA,MTech,MSc\nService Line: Data & Analytics Unit\n\nResponsibilities:\nDevelop and maintain Generative AI applications using Python.\nBuild AI-powered chatbots, virtual assistants, and automation solutions.\nIntegrate Large Language Models (OpenAI, Azure OpenAI, Claude, Gemini, Llama, etc.) into applications.\nDesign and optimize prompts to improve model performance and accuracy.\nImplement Retrieval-Augmented Generation (RAG) solutions using vector databases.\nWork with frameworks like LangChain, LlamaIndex, and Semantic Kernel.\nDevelop REST APIs and integrate AI services with web applications.\nCollaborate with cross-functional teams to understand business requirements and deliver AI-driven solutions.\nPerform testing, debugging, and performance optimization of AI applications.\n\nTechnical and Professional Requirements:\nStrong proficiency in Python programming.\nKnowledge of Generative AI concepts, LLMs, and Prompt Engineering.\nExperience with OpenAI/Azure OpenAI APIs.\nHands-on experience with LangChain, LlamaIndex, or similar frameworks.\nKnowledge of RAG Architecture and vector databases such as Pinecone, ChromaDB, FAISS, or Azure AI Search.\nExperience with REST APIs, FastAPI, or Flask.\nUnderstanding of Git and version control systems.\nFamiliarity with cloud platforms such as Azure, AWS, or GCP.\n\nPreferred Skills:\nTechnology->AI-Data science->PYTHON - AI-Data Science\nTechnology->AI-Data science->Machine Learning\nTechnology->AI-Generative AI->Generative AI for Data Analytics"
+}

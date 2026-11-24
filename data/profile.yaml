@@ -1,0 +1,306 @@
+# ==============================================================================
+# BASE RESUME - GROUND TRUTH DATABASE (Resume-as-Code)
+# ==============================================================================
+# Candidate: Boobesh S
+# Current Role: Software Engineer (AI / GenAI) @ Corent Technology
+# Schema Version: 1.0.0
+# Description: Strict source of truth for resume tailoring agents.
+# All tailoring agents must query this dataset. Zero external invention allowed.
+# ==============================================================================
+
+candidate:
+  name: "Boobesh S"
+  professional_title: "GenAI Engineer"
+  sub_title: "Agentic AI & Scalable Python Systems"
+  location: "Chennai, India"
+  contact:
+    phone: "+91 6381659585"
+    email: "boobesh2509@gmail.com"
+  links:
+    linkedin: "https://linkedin.com/in/boobesh-s-8a8387201"
+    github: "https://github.com/Boobesh25"
+    github_projects: "https://github.com/Boobesh25/Projects"
+
+# ------------------------------------------------------------------------------
+# Professional Summaries (Curated variations for different role targets)
+# ------------------------------------------------------------------------------
+summaries:
+  classic_ai_engineer: >-
+    AI-focused Software Engineer with 3+ years of experience building production-grade AI applications, RAG systems,
+    and scalable backend architectures. Experienced in LLM integrations, agentic AI workflows, Kafka-based async processing,
+    and real-time streaming systems using FastAPI, PostgreSQL, and cloud AI services. Strong hands-on experience to
+    solving production AI challenges including retrieval accuracy, scalability, latency optimization, and AI workflow orchestration.
+
+  primary: >-
+    AI Engineer with 3+ years of experience building production-grade AI applications, agentic workflows,
+    and scalable backend architectures. Experienced in multi-agent orchestration, tool integration via Model
+    Context Protocol (MCP), and real-time streaming APIs using FastAPI and PostgreSQL. Proven track record in
+    solving real-world AI challenges, including latency reduction, retrieval accuracy, token limits, and
+    reliable database grounding across multi-cloud environments.
+
+  agentic_focus: >-
+    GenAI Engineer specializing in Agentic AI Systems, Multi-Agent Orchestration, and the Model Context Protocol (MCP).
+    Proven track record designing production ReAct loops on Google ADK and LangGraph, engineering custom MCP toolsets
+    with persistent session pooling (slashing latency by ~60%), and building deterministic anti-hallucination pipelines
+    that ground LLM actions directly in live relational databases and cloud APIs. Experienced across the full AI lifecycle
+    from prompt engineering and semantic routing to vector retrieval (pgvector/Qdrant) and OpenTelemetry observability.
+
+  backend_ai_systems: >-
+    AI-focused Software Engineer with 3+ years architecting high-throughput backend services and production AI infrastructure.
+    Expertise in Python, FastAPI (asyncio/asyncpg), SSE streaming, WebSockets, and connection pooling for high-throughput
+    enterprise workloads. Engineered core middleware for enterprise LLM workloads including context-window payload optimization
+    and token cost optimization across multi-model deployments (Google Gemini and AWS Bedrock).
+
+# ------------------------------------------------------------------------------
+# Verified Skills Inventory (Strict allowlist - agents cannot invent tools outside this list)
+# ------------------------------------------------------------------------------
+skills:
+  agentic_and_llm:
+    title: "Generative AI & Agentic Systems"
+    items:
+      - "Agentic AI Architectures (Google ADK, LangGraph)"
+      - "Model Context Protocol (MCP - Client & Server Integration)"
+      - "ReAct Decision Loops & Multi-Agent Task Delegation"
+      - "Retrieval-Augmented Generation (RAG) & Semantic Search"
+      - "Vector Databases & Search (PostgreSQL with pgvector, Qdrant)"
+      - "Embeddings & Reranking (Gemini Embeddings, Cross-Encoders)"
+      - "Prompt Engineering & Structured JSON Output Guardrails"
+      - "Anti-Hallucination Data Grounding (Schema-to-SQL Execution)"
+      - "Multi-Provider LLM Routing (Google Gemini, AWS Bedrock Nova, Azure OpenAI)"
+      - "LLM Code Generation"
+
+  backend_and_data:
+    title: "Backend & Data Engineering"
+    items:
+      - "Python 3 (asyncio, asyncpg, concurrency models)"
+      - "FastAPI (REST APIs, Server-Sent Events [SSE], WebSockets)"
+      - "PostgreSQL & SQLAlchemy (Connection Pooling, Schema Design)"
+      - "Data Processing & Analytics (Pandas, NumPy)"
+      - "Caching & Asynchronous Messaging (Redis, Kafka)"
+      - "MySQL"
+
+  infrastructure_and_llmops:
+    title: "LLMOps, Infrastructure & Observability"
+    items:
+      - "OpenTelemetry & OpenLIT (LLM Tracing & Token Observability)"
+      - "LangSmith Distributed Tracing & Observability"
+      - "Docker & Containerization (docker-compose)"
+      - "Kubernetes (Deployments, HPA & KEDA Autoscaling)"
+      - "GitOps & Deployment Automation (ArgoCD)"
+      - "Reverse Proxies & Web Servers (Nginx, Gunicorn)"
+      - "Linux & Shell Scripting"
+      - "Cloud Services (GCP Cloud Run, Cloud Logging, AWS Bedrock, Azure Functions)"
+
+  fundamentals:
+    title: "Software Engineering Fundamentals"
+    items:
+      - "Object-Oriented Design & Classic Design Patterns (Factory, Strategy, Observer, Singleton, Adapter, Builder)"
+      - "Distributed Tracing & Reliability Engineering"
+      - "API Contract Design & Schema Validation (Pydantic)"
+      - "Asynchronous Streaming & Event-Driven Architectures"
+
+skills_classic:
+  programming_backend:
+    title: "Programming & Backend"
+    items: "Python, FastAPI, REST APIs, WebSockets, SQLAlchemy, Pandas, Gunicorn, Nginx"
+  ai_genai:
+    title: "AI / GenAI"
+    items: "Agentic AI (Google ADK, LangGraph), Model Context Protocol (MCP - Client & Server Integration), ReAct Decision Loops, RAG, Vector Search, Embeddings, Semantic Search, Cross-Encoders, Prompt Engineering, Multi-Provider LLM Routing"
+  databases:
+    title: "Databases"
+    items: "PostgreSQL (pgvector), MySQL, Qdrant, ChromaDB"
+  messaging_streaming:
+    title: "Messaging & Streaming"
+    items: "Kafka, Redis, Server-Sent Events (SSE)"
+  cloud_ai_platforms:
+    title: "Cloud & AI Platforms"
+    items: "Azure OpenAI, AWS Bedrock, Vertex AI, Gemini AI, Google Cloud Run"
+  infrastructure_observability:
+    title: "Infrastructure & Observability"
+    items: "Docker, Kubernetes (HPA & KEDA Autoscaling), OpenTelemetry, OpenLIT, Fluent Bit, Loki, Grafana, LangSmith, ArgoCD, Linux"
+  software_engineering_fundamentals:
+    title: "Software Engineering Fundamentals"
+    items: "Object-Oriented Design & Classic Design Patterns (Factory, Strategy, Observer, Singleton, Adapter, Builder), Distributed Tracing & Reliability Engineering, API Contract Design & Schema Validation (Pydantic)"
+
+
+
+# ------------------------------------------------------------------------------
+# Professional Experience
+# ------------------------------------------------------------------------------
+experience:
+  - company: "Corent Technology"
+    location: "Chennai, India"
+    role: "Software Engineer (AI / GenAI)"
+    department: "Python Backend & AI Engineering Team"
+    period:
+      start: "2023-01"
+      end: "Present"
+      display: "January 2023 – Present"
+    summary: >-
+      Core engineer driving the architecture and implementation of Corent's flagship enterprise agentic AI platform,
+      empowering cloud architects and enterprise IT to query, govern, and optimize multi-cloud infrastructure
+      (AWS, Azure, GCP) across all global regions in plain natural language.
+    
+    # Master pool of verified, production-proven bullets with metadata tags & metrics
+    bullet_pool:
+      - id: "corent_orchestration_router"
+        category: "agentic_orchestration"
+        tags: ["google-adk", "react", "multi-agent", "routing", "latency"]
+        verified_metrics:
+          - "two-tier orchestration"
+          - "deterministic router"
+        claim: >-
+          Architected a 2-tier agent orchestration system with Google ADK; deployed a deterministic root router
+          to classify intent and delegate execution to specialized MCP ReAct agents, eliminating discovery hops and ensuring predictable routing.
+
+      - id: "corent_context_caching"
+        category: "cost_and_performance_optimization"
+        tags: ["gemini", "context-caching", "mcp", "latency", "token-cost"]
+        verified_metrics:
+          - "75% input token cost reduction"
+          - "~60% latency reduction"
+        claim: >-
+          Implemented Gemini Context Caching across 78+ MCP tool schemas and static system instructions,
+          eliminating redundant prompt token ingestion to slash recurring input token costs by 75% and
+          reduce multi-turn agent response latency by ~60%.
+
+      - id: "corent_anti_hallucination_grounding"
+        category: "data_grounding"
+        tags: ["anti-hallucination", "sql-generation", "mcp-resources", "grounding"]
+        verified_metrics:
+          - "100% grounded in live DB rows"
+        claim: >-
+          Built a deterministic schema-grounding pipeline exposing relational schemas as MCP resources; constrained
+          LLM outputs to validated, read-only SQL queries to guarantee 100% factual fidelity against live records.
+
+      - id: "corent_structural_payload_truncation"
+        category: "system_reliability"
+        tags: ["fastapi", "middleware", "payload-truncation", "context-window"]
+        verified_metrics:
+          - "200 KB to 2 MB JSON telemetry payloads"
+          - "5 to 50 items downsampled"
+          - "0 context overflow crashes"
+        claim: >-
+          Built an adaptive response-downsampling middleware for high-volume cloud telemetry payloads (200 KB to 2 MB),
+          preserving context-window token budgets and eliminating token limit errors.
+
+      - id: "corent_analytics_pipeline"
+        category: "data_analytics"
+        tags: ["pandas", "analytics", "visualization", "data-pipeline", "sandbox"]
+        verified_metrics:
+          - "automated aggregation logic"
+          - "sandboxed execution"
+        claim: >-
+          Engineered an automated analytics pipeline generating dynamic Pandas aggregation and transformation logic
+          from multi-cloud telemetry, with sandboxed runtime execution, syntax validation, and structured tabular fallbacks.
+
+      - id: "corent_bounded_session_hitl"
+        category: "memory_and_hitl"
+        tags: ["session-memory", "hitl", "token-cost", "context-resolution"]
+        verified_metrics:
+          - "bounded to last 2 turns"
+          - "flat token cost curve"
+        claim: >-
+          Designed a bounded-memory session service with Human-In-The-Loop (HITL) resolution, restricting history to recent
+          user turns to enforce flat token economics while preserving pending clarification states for follow-ups.
+
+      - id: "corent_multi_provider_routing"
+        category: "llm_architecture"
+        tags: ["gemini", "aws-bedrock", "provider-abstraction", "vendor-agnostic", "model-routing"]
+        verified_metrics:
+          - "dual providers (Google Gemini & AWS Bedrock Nova)"
+        claim: >-
+          Engineered a vendor-agnostic LLM abstraction dynamically routing between Google Gemini and AWS Bedrock (Nova),
+          steering lightweight models to summarization and higher-tier models to multi-hop execution to minimize inference costs.
+
+      - id: "corent_opentelemetry_observability"
+        category: "observability"
+        tags: ["opentelemetry", "openlit", "langsmith", "distributed-tracing", "postgresql"]
+        verified_metrics:
+          - "100% trace coverage across 4 pipeline phases"
+        claim: >-
+          Instrumented end-to-end distributed tracing using OpenTelemetry and a custom PostgreSQL span exporter, capturing
+          per-phase latency, model identifiers, and granular token consumption across all agent execution stages.
+
+      - id: "corent_backend_architecture"
+        category: "backend_engineering"
+        tags: ["fastapi", "asyncpg", "nginx", "keda", "kafka", "connection-pooling"]
+        verified_metrics:
+          - "high-concurrency async connection pooling"
+        claim: >-
+          Architected asynchronous FastAPI microservices with PostgreSQL connection pooling behind Nginx; deployed KEDA autoscalers
+          with Kafka consumers for resilient, event-driven background task processing.
+
+      - id: "corent_multicloud_cost_migration"
+        category: "cloud_intelligence"
+        tags: ["aws", "azure", "gcp", "cost-optimization", "migration"]
+        verified_metrics:
+          - "3 cloud providers (AWS, Azure, GCP)"
+          - "All global regions"
+        claim: >-
+          Engineered multi-cloud cost intelligence and sizing workflows across AWS, Azure, and GCP (~15 regions), delivering
+          automated rightsizing models that identified 20-30% projected compute cost savings for enterprise migrations.
+
+# ------------------------------------------------------------------------------
+# Flagship Personal Projects (Verifiable on GitHub)
+# ------------------------------------------------------------------------------
+projects:
+  - id: "project_genai_multiagent_chatbot"
+    name: "GenAI Multi-Agent Chatbot Platform"
+    repo: "https://github.com/Boobesh25/Projects"
+    live_url: "https://projects-bu8jtjbtyqe7otklpukvoq.streamlit.app/"
+    tech_stack: ["LangGraph", "FastAPI", "Google Gemini", "Qdrant", "Redis", "PostgreSQL", "Streamlit", "LangSmith", "Docker"]
+    highlight: "Stateful ReAct multi-agent workflow with adaptive retrieval and semantic caching"
+    bullets:
+      - "Built an autonomous ReAct agent chatbot using LangGraph and Google Gemini that dynamically routes queries between SQL database tools, Qdrant document vector search, and computational tools without hardcoded rules."
+      - "Implemented semantic chunking with adaptive similarity thresholds to split documents along topical boundaries, isolating collections per user in Qdrant."
+      - "Integrated Redis caching with incremental re-embedding, slashing external LLM embedding API calls by up to 80% on document updates."
+      - "Secured endpoints via Google OAuth 2.0 and JWT authentication, streaming real-time agent execution events over WebSockets with LangSmith observability."
+
+
+  - id: "project_k8s_argocd_gitops"
+    name: "Production FastAPI on GKE with ArgoCD GitOps"
+    repo: "https://github.com/Boobesh25/fastapi-demo-cicd"
+    tech_stack: ["Google Kubernetes Engine (GKE)", "ArgoCD", "Docker", "FastAPI", "HPA", "GitOps"]
+    highlight: "Automated GitOps CD deployment with CPU-driven autoscaling"
+    bullets:
+      - "Containerized a high-concurrency FastAPI microservice and deployed a 3-replica architecture on Google Kubernetes Engine with automated health checks."
+      - "Configured Horizontal Pod Autoscaler (HPA) policies scaling pods dynamically under load, validated using an automated synthetic stress-testing endpoint."
+      - "Established declarative GitOps delivery using ArgoCD with automated repository synchronization, pruning, and self-healing rollouts."
+
+
+# ------------------------------------------------------------------------------
+# Education & Credentials
+# ------------------------------------------------------------------------------
+education:
+  - degree: "Master of Science (M.Sc) in Cyber Forensic and Information Security (Correspondence)"
+    institution: "University of Madras"
+    location: "Chennai, India"
+    period: "August 2022 – May 2024"
+    mode: "Correspondence / Distance Education"
+    relevance: "Advanced training in security protocols, threat vectors, data privacy, and systems auditing."
+
+  - degree: "Bachelor of Science (B.Sc) in Computer Science"
+    institution: "Mar Gregorios College of Arts & Science"
+    location: "Chennai, India"
+    period: "August 2019 – May 2022"
+    relevance: "Core computer science fundamentals, data structures, algorithms, database management, and object-oriented programming."
+
+# ------------------------------------------------------------------------------
+# Strict Guardrail Rules for Tailoring Agents (Zero Hallucination Policy)
+# ------------------------------------------------------------------------------
+tailoring_guardrails:
+  immutable_fields:
+    - "Candidate name, contact details, email addresses, phone number, and location."
+    - "Company names (Corent Technology), employment dates, and educational degrees."
+    - "College/University names (University of Madras, Mar Gregorios College)."
+  forbidden_actions:
+    - "DO NOT fabricate customer counts, revenue numbers, or confidential client names."
+    - "DO NOT mention company internal infrastructure specifications, server counts, or hardware cluster footprints; anchor scale strictly on technical breadth (78+ tools across 3 clouds and ~15 global regions)."
+    - "DO NOT introduce unverified technologies (e.g., PyTorch, TensorFlow, Rust, Swift, Go, C#) unless explicitly in verified_skills."
+    - "DO NOT alter quantified metrics (e.g., '78+ tools', '60% latency reduction', '<10s' must remain strictly unchanged)."
+    - "DO NOT claim full production CI/CD or production Kafka clusters at Corent; present Kafka and GitOps accurately as proven hands-on/personal projects."
+  allowed_tailoring:
+    - "Re-ordering and filtering bullet points based on the target Job Description (JD)."
+    - "Synthesizing bullet phrasing to mirror the JD's action verbs and keyword emphasis while preserving 100% of the underlying technical truth."
+    - "Adjusting technical skill ordering and grouping to spotlight the JD's requested proficiencies."

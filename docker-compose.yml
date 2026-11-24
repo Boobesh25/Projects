@@ -1,0 +1,77 @@
+# =============================================================================
+# JobRadar Enterprise Platform - Multi-Container Docker Compose
+# =============================================================================
+version: '3.8'
+
+services:
+  # 1. Relational Database (PostgreSQL 16)
+  db:
+    image: postgres:16-alpine
+    container_name: jobradar-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-career_portal}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-career_portal}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # 2. FastAPI Backend Application
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: jobradar-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-career_portal}
+      JWT_SECRET: ${JWT_SECRET:-jobradar-enterprise-secret-key-change-in-production}
+      DEFAULT_USER_EMAIL: ${DEFAULT_USER_EMAIL:-boobesh2509@gmail.com}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      PORT_API: 8000
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # 3. Streamlit Frontend UI Portal
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.ui
+    container_name: jobradar-ui
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_BASE_URL: http://api:8000
+      DEFAULT_USER_EMAIL: ${DEFAULT_USER_EMAIL:-boobesh2509@gmail.com}
+      PORT_UI: 8501
+    ports:
+      - "8501:8501"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  postgres_data:
+    driver: local

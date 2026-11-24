@@ -1,0 +1,54 @@
+# =============================================================================
+# Production Server Docker Compose for JobRadar Platform
+# Pulls pre-built images from GitHub Container Registry (GHCR)
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # 1. FastAPI Backend API Microservice
+  api:
+    image: ghcr.io/${GITHUB_REPOSITORY:-boobesh25/projects}/api:latest
+    container_name: jobradar_api
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-jobradar-enterprise-secret-key-change-in-production}
+      - DEFAULT_USER_EMAIL=${DEFAULT_USER_EMAIL:-boobesh2509@gmail.com}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:////app/data/career_portal.db}
+      - PORT_API=8000
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # 2. Streamlit Frontend UI Portal
+  ui:
+    image: ghcr.io/${GITHUB_REPOSITORY:-boobesh25/projects}/ui:latest
+    container_name: jobradar_ui
+    restart: always
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      - API_BASE_URL=${API_BASE_URL:-http://api:8000}
+      - DEFAULT_USER_EMAIL=${DEFAULT_USER_EMAIL:-boobesh2509@gmail.com}
+      - PORT_UI=8501
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8501/_stcore/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

@@ -1,0 +1,183 @@
+name: CI/CD Pipeline - Test, Build & Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. CI: Fast Unit & Endpoint Tests
+  # ---------------------------------------------------------------------------
+  test:
+    name: Run Unit & Health Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-asyncio httpx
+          pip install -r requirements.txt
+
+      - name: Run Pytest
+        env:
+          PYTHONPATH: "."
+          JWT_SECRET: "ci-test-secret-key-12345"
+          DEFAULT_USER_EMAIL: "boobesh2509@gmail.com"
+          DATABASE_URL: "sqlite+aiosqlite:///data/career_portal.db"
+        run: |
+          pytest tests/ -v
+
+  # ---------------------------------------------------------------------------
+  # 2. Build & Push Multi-Stage Docker Images to GHCR (API & UI)
+  # ---------------------------------------------------------------------------
+  build-and-push:
+    name: Build & Push Docker Images
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry (GHCR)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build and Push Backend API Image
+      - name: Extract Docker Metadata (API)
+        id: meta-api
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/api
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - name: Build and Push API Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.api
+          push: true
+          tags: ${{ steps.meta-api.outputs.tags }}
+          labels: ${{ steps.meta-api.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Build and Push Frontend UI Image
+      - name: Extract Docker Metadata (UI)
+        id: meta-ui
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/ui
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - name: Build and Push UI Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.ui
+          push: true
+          tags: ${{ steps.meta-ui.outputs.tags }}
+          labels: ${{ steps.meta-ui.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ---------------------------------------------------------------------------
+  # 3. CD: Automated Deployment to Remote Server via SSH
+  # ---------------------------------------------------------------------------
+  deploy:
+    name: Deploy to Server via SSH
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Connect and Deploy on Server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          script: |
+            set -e
+            ACTOR_LOWER=$(echo "${{ github.actor }}" | tr '[:upper:]' '[:lower:]')
+            REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+            API_IMAGE="ghcr.io/${REPO_LOWER}/api:latest"
+            UI_IMAGE="ghcr.io/${REPO_LOWER}/ui:latest"
+
+            echo "==== 1. Log in to GitHub Container Registry ===="
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin
+
+            echo "==== 2. Navigate to Server Application Directory ===="
+            cd ${{ secrets.SERVER_APP_DIR }}
+
+            # Auto-detect whether server uses 'docker compose' (v2 plugin) or 'docker-compose' (v1/v2 standalone)
+            if docker compose version >/dev/null 2>&1; then
+                DC="docker compose"
+            elif command -v docker-compose >/dev/null 2>&1; then
+                DC="docker-compose"
+            else
+                echo "Neither 'docker compose' nor 'docker-compose' was found on the server!"
+                exit 1
+            fi
+            echo "Using Compose command: $DC"
+
+            # Auto-detect compose file
+            COMPOSE_FILE=""
+            for f in docker-compose.server.yml docker-compose.prod.yml docker-compose.yml; do
+                if [ -f "$f" ]; then
+                    COMPOSE_FILE="$f"
+                    break
+                fi
+            done
+
+            if [ -z "$COMPOSE_FILE" ]; then
+                echo "No compose file found in $(pwd)!"
+                ls -la
+                exit 1
+            fi
+            echo "Using Compose file: $COMPOSE_FILE"
+
+            echo "==== 3. Pull Latest Docker Images from GHCR ===="
+            docker pull "$API_IMAGE"
+            docker pull "$UI_IMAGE"
+            docker tag "$API_IMAGE" jobradar_api:latest || true
+            docker tag "$UI_IMAGE" jobradar_ui:latest || true
+
+            echo "==== 4. Restart Application Services with Zero Downtime ===="
+            $DC -f "$COMPOSE_FILE" up -d
+
+            echo "==== 5. Health Check Verification ===="
+            sleep 10
+            curl -f http://127.0.0.1:8000/api/health || (echo "API Health check failed!" && exit 1)
+            curl -f http://127.0.0.1:8501/_stcore/health || (echo "UI Health check failed!" && exit 1)
+
+            echo "==== 6. Prune Dangling Images ===="
+            docker image prune -f
+            echo "Deployment successful!"

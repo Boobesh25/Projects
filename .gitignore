@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Environment & Credentials
+.env
+.env.local
+.env.production
+*.pem
+*.key
+credentials.json
+token.json
+client_secrets.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Docker overrides
+docker-compose.override.yml
+
+# Databases (prevent committing SQLite / Postgres dumps)
+*.db
+*.sqlite3
+
+# Exports and Generated Assets
+exports/
+google_drive_export/
+google_drive_backups/
+*.pdf
+*.docx
+*.xlsx
+
+# Temporary / Scratch
+*.bak
+*.tmp
