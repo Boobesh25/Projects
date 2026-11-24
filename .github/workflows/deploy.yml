@@ -127,7 +127,7 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
           timeout: 60s
-          command_timeout: 20m
+          command_timeout: 15m
           script: |
             set -e
             ACTOR_LOWER=$(echo "${{ github.actor }}" | tr '[:upper:]' '[:lower:]')
@@ -136,98 +136,76 @@ jobs:
             UI_IMAGE="ghcr.io/${REPO_LOWER}/jobradar-ui:latest"
 
             echo "==== 1. Log in to GitHub Container Registry ===="
-            LOGIN_OK=false
             if [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
-                if echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin; then
-                    echo "Authenticated to GHCR via GHCR_TOKEN"
-                    LOGIN_OK=true
-                fi
-            fi
-            if [ "$LOGIN_OK" = false ]; then
-                echo "GHCR_TOKEN not accepted or expired. Trying GITHUB_TOKEN..."
-                if echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin; then
-                    echo "Authenticated to GHCR via GITHUB_TOKEN"
-                    LOGIN_OK=true
-                else
-                    echo "Notice: Direct GHCR login failed. Proceeding (images may be public or cached)..."
-                fi
+                echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin || true
+            else
+                echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin || true
             fi
 
             echo "==== 2. Setup Dedicated Application Directory on Server ===="
-            APP_DIR="${{ secrets.SERVER_APP_DIR }}/../jobradar"
-            mkdir -p "$APP_DIR" 2>/dev/null || APP_DIR="$HOME/jobradar"
-            mkdir -p "$APP_DIR"
+            APP_DIR="$HOME/jobradar"
+            mkdir -p "$APP_DIR/data"
             cd "$APP_DIR"
-            mkdir -p data
             echo "Deployment directory: $(pwd)"
 
-            # Auto-copy .env from parent or SERVER_APP_DIR if present
-            if [ -f "${{ secrets.SERVER_APP_DIR }}/.env" ] && [ ! -f ".env" ]; then
+            # Auto-copy .env if present
+            if [ -n "${{ secrets.SERVER_APP_DIR }}" ] && [ -f "${{ secrets.SERVER_APP_DIR }}/.env" ] && [ ! -f ".env" ]; then
                 cp "${{ secrets.SERVER_APP_DIR }}/.env" .env || true
             fi
+            touch .env || true
 
-            # Auto-detect whether server uses 'docker compose' (v2 plugin) or 'docker-compose' (v1/v2 standalone)
-            if docker compose version >/dev/null 2>&1; then
-                DC="docker compose"
-            elif command -v docker-compose >/dev/null 2>&1; then
-                DC="docker-compose"
-            else
-                echo "Neither 'docker compose' nor 'docker-compose' was found on the server!"
-                exit 1
+            echo "==== 3. Pull Latest JobRadar API Image ===="
+            docker pull "$API_IMAGE"
+            docker tag "$API_IMAGE" jobradar_api:latest || true
+
+            echo "==== 4. Restart JobRadar API Container on Host Port 8001 ===="
+            docker stop jobradar_api 2>/dev/null || true
+            docker rm jobradar_api 2>/dev/null || true
+            docker run -d \
+              --name jobradar_api \
+              --restart always \
+              -p 8001:8000 \
+              --env-file .env \
+              -e PORT_API=8000 \
+              -e DEFAULT_USER_EMAIL=boobesh2509@gmail.com \
+              -e DATABASE_URL="sqlite+aiosqlite:////app/data/career_portal.db" \
+              -v "$APP_DIR/data:/app/data" \
+              "$API_IMAGE"
+
+            echo "==== 5. Pull & Restart JobRadar UI Container on Host Port 8501 ===="
+            if docker pull "$UI_IMAGE"; then
+                docker tag "$UI_IMAGE" jobradar_ui:latest || true
+                docker stop jobradar_ui 2>/dev/null || true
+                docker rm jobradar_ui 2>/dev/null || true
+                docker run -d \
+                  --name jobradar_ui \
+                  --restart always \
+                  -p 8501:8501 \
+                  --env-file .env \
+                  -e PORT_UI=8501 \
+                  -e API_BASE_URL="http://127.0.0.1:8001" \
+                  -e DEFAULT_USER_EMAIL=boobesh2509@gmail.com \
+                  "$UI_IMAGE" || true
             fi
-            echo "Using Compose command: $DC"
 
-            # Generate production docker-compose.yml for JobRadar via base64 decoding (100% immune to heredoc indentation syntax errors)
-            echo "IyA9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQojIFByb2R1Y3Rpb24gU2VydmVyIERvY2tlciBDb21wb3NlIGZvciBKb2JSYWRhciBQbGF0Zm9ybQojIFB1bGxzIHByZS1idWlsdCBpbWFnZXMgZnJvbSBHaXRIdWIgQ29udGFpbmVyIFJlZ2lzdHJ5IChHSENSKQojID09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09Cgp2ZXJzaW9uOiAnMy44JwoKc2VydmljZXM6CiAgIyAxLiBGYXN0QVBJIEJhY2tlbmQgQVBJIE1pY3Jvc2VydmljZQogIGFwaToKICAgIGltYWdlOiBnaGNyLmlvLyR7R0lUSFVCX1JFUE9TSVRPUlk6LWJvb2Jlc2gyNS9wcm9qZWN0c30vam9icmFkYXItYXBpOmxhdGVzdAogICAgY29udGFpbmVyX25hbWU6IGpvYnJhZGFyX2FwaQogICAgcmVzdGFydDogYWx3YXlzCiAgICBwb3J0czoKICAgICAgLSAiJHtQT1JUX0FQSV9IT1NUOi04MDAxfTo4MDAwIgogICAgZW52X2ZpbGU6CiAgICAgIC0gLmVudgogICAgZW52aXJvbm1lbnQ6CiAgICAgIC0gSldUX1NFQ1JFVD0ke0pXVF9TRUNSRVQ6LWpvYnJhZGFyLWVudGVycHJpc2Utc2VjcmV0LWtleS1jaGFuZ2UtaW4tcHJvZHVjdGlvbn0KICAgICAgLSBERUZBVUxUX1VTRVJfRU1BSUw9JHtERUZBVUxUX1VTRVJfRU1BSUw6LWJvb2Jlc2gyNTA5QGdtYWlsLmNvbX0KICAgICAgLSBHRU1JTklfQVBJX0tFWT0ke0dFTUlOSV9BUElfS0VZOi19CiAgICAgIC0gREFUQUJBU0VfVVJMPSR7REFUQUJBU0VfVVJMOi1zcWxpdGUrYWlvc3FsaXRlOi8vLy9hcHAvZGF0YS9jYXJlZXJfcG9ydGFsLmRifQogICAgICAtIFBPUlRfQVBJPTgwMDAKICAgIHZvbHVtZXM6CiAgICAgIC0gLi9kYXRhOi9hcHAvZGF0YQogICAgaGVhbHRoY2hlY2s6CiAgICAgIHRlc3Q6IFsiQ01EIiwgImN1cmwiLCAiLWYiLCAiaHR0cDovLzEyNy4wLjAuMTo4MDAwL2FwaS9oZWFsdGgiXQogICAgICBpbnRlcnZhbDogMTVzCiAgICAgIHRpbWVvdXQ6IDVzCiAgICAgIHJldHJpZXM6IDMKICAgICAgc3RhcnRfcGVyaW9kOiAxNXMKCiAgIyAyLiBTdHJlYW1saXQgRnJvbnRlbmQgVUkgUG9ydGFsCiAgdWk6CiAgICBpbWFnZTogZ2hjci5pby8ke0dJVEhVQl9SRVBPU0lUT1JZOi1ib29iZXNoMjUvcHJvamVjdHN9L2pvYnJhZGFyLXVpOmxhdGVzdAogICAgY29udGFpbmVyX25hbWU6IGpvYnJhZGFyX3VpCiAgICByZXN0YXJ0OiBhbHdheXMKICAgIHBvcnRzOgogICAgICAtICI4NTAxOjg1MDEiCiAgICBlbnZfZmlsZToKICAgICAgLSAuZW52CiAgICBlbnZpcm9ubWVudDoKICAgICAgLSBBUElfQkFTRV9VUkw9JHtBUElfQkFTRV9VUkw6LWh0dHA6Ly9hcGk6ODAwMH0KICAgICAgLSBERUZBVUxUX1VTRVJfRU1BSUw9JHtERUZBVUxUX1VTRVJfRU1BSUw6LWJvb2Jlc2gyNTA5QGdtYWlsLmNvbX0KICAgICAgLSBQT1JUX1VJPTg1MDEKICAgIGRlcGVuZHNfb246CiAgICAgIGFwaToKICAgICAgICBjb25kaXRpb246IHNlcnZpY2VfaGVhbHRoeQogICAgaGVhbHRoY2hlY2s6CiAgICAgIHRlc3Q6IFsiQ01EIiwgImN1cmwiLCAiLWYiLCAiaHR0cDovLzEyNy4wLjAuMTo4NTAxL19zdGNvcmUvaGVhbHRoIl0KICAgICAgaW50ZXJ2YWw6IDE1cwogICAgICB0aW1lb3V0OiA1cwogICAgICByZXRyaWVzOiAzCiAgICAgIHN0YXJ0X3BlcmlvZDogMTVzCgogICMgMy4gQXV0b21hdGVkIENsb3VkZmxhcmUgUXVpY2sgVHVubmVsIChFeHBvc2VzIEFQSSBvdmVyIEhUVFBTIGZvciBTdHJlYW1saXQgQ2xvdWQpCiAgdHVubmVsOgogICAgaW1hZ2U6IGNsb3VkZmxhcmUvY2xvdWRmbGFyZWQ6bGF0ZXN0CiAgICBjb250YWluZXJfbmFtZTogam9icmFkYXJfdHVubmVsCiAgICByZXN0YXJ0OiBhbHdheXMKICAgIGNvbW1hbmQ6IHR1bm5lbCAtLW5vLWF1dG91cGRhdGUgLS11cmwgaHR0cDovL2FwaTo4MDAwCiAgICBkZXBlbmRzX29uOgogICAgICBhcGk6CiAgICAgICAgY29uZGl0aW9uOiBzZXJ2aWNlX2hlYWx0aHkK" | base64 -d > docker-compose.yml
-
-            echo "==== 3. Pull Latest Images from GHCR ===="
-            docker pull "$API_IMAGE" || true
-            docker pull "$UI_IMAGE" || true
-
-            echo "==== 4. Restart Application Services with Zero Downtime ===="
-            $DC up -d --remove-orphans
-
-            echo "==== 5. Resilient Health Check Verification ===="
+            echo "==== 6. Verify Health on Host Port 8001 ===="
             API_OK=false
-            for i in $(seq 1 25); do
-                if curl -sf http://127.0.0.1:8001/api/health || curl -sf http://127.0.0.1:8000/api/health; then
-                    echo "API is healthy!"
+            for i in $(seq 1 20); do
+                if curl -sf http://127.0.0.1:8001/api/health; then
+                    echo "API is healthy on http://127.0.0.1:8001/api/health!"
                     API_OK=true
                     break
                 fi
-                echo "Waiting for API service to initialize (attempt $i/25)..."
-                sleep 3
+                echo "Waiting for API service to initialize (attempt $i/20)..."
+                sleep 2
             done
+
             if [ "$API_OK" = false ]; then
-                echo "API Health check timed out!"
-                docker logs jobradar_api || true
+                echo "API Health check timed out on port 8001!"
+                docker logs jobradar_api --tail 50 || true
                 exit 1
             fi
-
-            UI_OK=false
-            for i in $(seq 1 25); do
-                if curl -sf http://127.0.0.1:8501/_stcore/health; then
-                    echo "UI is healthy!"
-                    UI_OK=true
-                    break
-                fi
-                echo "Waiting for UI service to initialize (attempt $i/25)..."
-                sleep 3
-            done
-            if [ "$UI_OK" = false ]; then
-                echo "UI Health check timed out!"
-                docker logs jobradar_ui || true
-                exit 1
-            fi
-
-            echo "==== 6. Retrieve Cloudflare Tunnel URL ===="
-            sleep 6
-            TUNNEL_URL=$(docker logs jobradar_tunnel 2>&1 | grep -o 'https://[a-zA-Z0-9-]*\.trycloudflare\.com' | head -n 1 || true)
-            echo "=========================================================="
-            echo "CLOUDFLARE TUNNEL URL: $TUNNEL_URL"
-            echo "Use this URL as API_BASE_URL in Streamlit Cloud Secrets"
-            echo "=========================================================="
 
             echo "==== 7. Prune Dangling Images ===="
             docker image prune -f || true
-            echo "Deployment successful!"
+            echo "Deployment to server successful!"
