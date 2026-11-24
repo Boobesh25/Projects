@@ -136,10 +136,30 @@ jobs:
             UI_IMAGE="ghcr.io/${REPO_LOWER}/jobradar-ui:latest"
 
             echo "==== 1. Log in to GitHub Container Registry ===="
-            if [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
-                echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin || true
+            LOGIN_OK=false
+
+            # Try GITHUB_TOKEN first (automatically generated with packages:write permissions for this run)
+            echo "Authenticating to GHCR with GITHUB_TOKEN..."
+            if echo "${{ github.token }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin 2>/dev/null; then
+                echo "Successfully authenticated to GHCR via GITHUB_TOKEN"
+                LOGIN_OK=true
             else
-                echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin || true
+                echo "Notice: GITHUB_TOKEN direct login was not accepted."
+            fi
+
+            # Fallback to GHCR_TOKEN repository secret if GITHUB_TOKEN failed
+            if [ "$LOGIN_OK" = false ] && [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
+                echo "Authenticating to GHCR with GHCR_TOKEN secret..."
+                if echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin 2>/dev/null; then
+                    echo "Successfully authenticated to GHCR via GHCR_TOKEN"
+                    LOGIN_OK=true
+                else
+                    echo "Notice: GHCR_TOKEN login failed (PAT may be expired)."
+                fi
+            fi
+
+            if [ "$LOGIN_OK" = false ]; then
+                echo "Warning: Neither token succeeded. Proceeding (if package is public or cached, pull will succeed)..."
             fi
 
             echo "==== 2. Setup Dedicated Application Directory on Server ===="
@@ -155,7 +175,21 @@ jobs:
             touch .env || true
 
             echo "==== 3. Pull Latest JobRadar API Image ===="
-            docker pull "$API_IMAGE"
+            PULLED_API=false
+            for attempt in 1 2 3; do
+                if docker pull "$API_IMAGE"; then
+                    PULLED_API=true
+                    break
+                fi
+                echo "API pull failed on attempt $attempt, waiting 3s..."
+                sleep 3
+            done
+
+            if [ "$PULLED_API" = false ]; then
+                echo "Error: Failed to pull $API_IMAGE from GHCR."
+                echo "If GHCR denied access, please refresh secrets.GHCR_TOKEN or make package public on GitHub."
+                exit 1
+            fi
             docker tag "$API_IMAGE" jobradar_api:latest || true
 
             echo "==== 4. Restart JobRadar API Container on Host Port 8001 ===="
