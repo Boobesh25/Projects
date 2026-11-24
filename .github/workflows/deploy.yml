@@ -35,13 +35,13 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-asyncio httpx
+          pip install pytest pytest-asyncio httpx beautifulsoup4 google-auth
           pip install -r requirements.txt
 
       - name: Run Pytest
         env:
           PYTHONPATH: "."
-          JWT_SECRET: "ci-test-secret-key-12345"
+          JWT_SECRET: "ci-test-secret-key-12345-enterprise-minimum-32-chars"
           DEFAULT_USER_EMAIL: "boobesh2509@gmail.com"
           DATABASE_URL: "sqlite+aiosqlite:///data/career_portal.db"
         run: |

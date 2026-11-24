@@ -12,7 +12,10 @@ import json
 from urllib.parse import urlparse
 from typing import Optional, Tuple, List, Dict, Any
 import requests
-from bs4 import BeautifulSoup
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    BeautifulSoup = None
 from .models import JobPosting
 
 class CareerPageExtractor:
