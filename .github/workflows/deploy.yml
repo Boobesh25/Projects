@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+      - career-radar
+      - jobradar
   workflow_dispatch:
 
 permissions:
@@ -71,7 +73,7 @@ jobs:
         id: meta-api
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/api
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/jobradar-api
           tags: |
             type=raw,value=latest
             type=sha,format=short
@@ -92,7 +94,7 @@ jobs:
         id: meta-ui
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/ui
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/jobradar-ui
           tags: |
             type=raw,value=latest
             type=sha,format=short
@@ -115,7 +117,7 @@ jobs:
     name: Deploy to Server via SSH
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/career-radar' || github.ref == 'refs/heads/jobradar'
     steps:
       - name: Connect and Deploy on Server
         uses: appleboy/ssh-action@v1.0.3
@@ -128,8 +130,8 @@ jobs:
             set -e
             ACTOR_LOWER=$(echo "${{ github.actor }}" | tr '[:upper:]' '[:lower:]')
             REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-            API_IMAGE="ghcr.io/${REPO_LOWER}/api:latest"
-            UI_IMAGE="ghcr.io/${REPO_LOWER}/ui:latest"
+            API_IMAGE="ghcr.io/${REPO_LOWER}/jobradar-api:latest"
+            UI_IMAGE="ghcr.io/${REPO_LOWER}/jobradar-ui:latest"
 
             echo "==== 1. Log in to GitHub Container Registry ===="
             echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin
@@ -175,7 +177,7 @@ jobs:
 
             echo "==== 5. Health Check Verification ===="
             sleep 10
-            curl -f http://127.0.0.1:8000/api/health || (echo "API Health check failed!" && exit 1)
+            (curl -f http://127.0.0.1:8001/api/health || curl -f http://127.0.0.1:8000/api/health) || (echo "API Health check failed!" && exit 1)
             curl -f http://127.0.0.1:8501/_stcore/health || (echo "UI Health check failed!" && exit 1)
 
             echo "==== 6. Prune Dangling Images ===="

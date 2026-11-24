@@ -8,7 +8,7 @@ set -euo pipefail
 
 IMAGE_TAG="${1:-latest}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.server.yml}"
-API_HEALTH_URL="${API_HEALTH_URL:-http://127.0.0.1:8000/api/health}"
+API_HEALTH_URL="${API_HEALTH_URL:-http://127.0.0.1:8001/api/health}"
 UI_HEALTH_URL="${UI_HEALTH_URL:-http://127.0.0.1:8501/_stcore/health}"
 MAX_HEALTH_ATTEMPTS=12
 SLEEP_INTERVAL=5
@@ -36,10 +36,10 @@ echo "Using Compose command: $DC"
 # 2. Pull images from GHCR
 REPO_NAME="${GITHUB_REPOSITORY:-boobesh25/projects}"
 echo "Pulling latest images for ${REPO_NAME}..."
-docker pull "ghcr.io/${REPO_NAME}/api:${IMAGE_TAG}" || true
-docker pull "ghcr.io/${REPO_NAME}/ui:${IMAGE_TAG}" || true
-docker tag "ghcr.io/${REPO_NAME}/api:${IMAGE_TAG}" jobradar_api:latest || true
-docker tag "ghcr.io/${REPO_NAME}/ui:${IMAGE_TAG}" jobradar_ui:latest || true
+docker pull "ghcr.io/${REPO_NAME}/jobradar-api:${IMAGE_TAG}" || true
+docker pull "ghcr.io/${REPO_NAME}/jobradar-ui:${IMAGE_TAG}" || true
+docker tag "ghcr.io/${REPO_NAME}/jobradar-api:${IMAGE_TAG}" jobradar_api:latest || true
+docker tag "ghcr.io/${REPO_NAME}/jobradar-ui:${IMAGE_TAG}" jobradar_ui:latest || true
 
 # 3. Recreate services
 echo "Updating containers..."

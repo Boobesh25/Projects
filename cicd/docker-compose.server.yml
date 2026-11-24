@@ -8,11 +8,11 @@ version: '3.8'
 services:
   # 1. FastAPI Backend API Microservice
   api:
-    image: ghcr.io/${GITHUB_REPOSITORY:-boobesh25/projects}/api:latest
+    image: ghcr.io/${GITHUB_REPOSITORY:-boobesh25/projects}/jobradar-api:latest
     container_name: jobradar_api
     restart: always
     ports:
-      - "8000:8000"
+      - "${PORT_API_HOST:-8001}:8000"
     env_file:
       - .env
     environment:
@@ -32,7 +32,7 @@ services:
 
   # 2. Streamlit Frontend UI Portal
   ui:
-    image: ghcr.io/${GITHUB_REPOSITORY:-boobesh25/projects}/ui:latest
+    image: ghcr.io/${GITHUB_REPOSITORY:-boobesh25/projects}/jobradar-ui:latest
     container_name: jobradar_ui
     restart: always
     ports:
