@@ -52,3 +52,13 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+  # 3. Automated Cloudflare Quick Tunnel (Exposes API over HTTPS for Streamlit Cloud)
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: jobradar_tunnel
+    restart: always
+    command: tunnel --no-autoupdate --url http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy

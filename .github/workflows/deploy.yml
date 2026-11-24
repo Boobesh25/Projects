@@ -216,6 +216,15 @@ jobs:
                   interval: 15s
                   timeout: 5s
                   retries: 3
+
+              tunnel:
+                image: cloudflare/cloudflared:latest
+                container_name: jobradar_tunnel
+                restart: always
+                command: tunnel --no-autoupdate --url http://api:8000
+                depends_on:
+                  api:
+                    condition: service_healthy
             EOF
 
             echo "==== 3. Pull Latest Docker Images from GHCR ===="
@@ -232,6 +241,14 @@ jobs:
             (curl -f http://127.0.0.1:8001/api/health || curl -f http://127.0.0.1:8000/api/health) || (echo "API Health check failed!" && exit 1)
             curl -f http://127.0.0.1:8501/_stcore/health || (echo "UI Health check failed!" && exit 1)
 
-            echo "==== 6. Prune Dangling Images ===="
+            echo "==== 6. Retrieve Cloudflare Tunnel URL ===="
+            sleep 8
+            TUNNEL_URL=$(docker logs jobradar_tunnel 2>&1 | grep -o 'https://[a-zA-Z0-9-]*\.trycloudflare\.com' | head -n 1 || true)
+            echo "=========================================================="
+            echo "CLOUDFLARE TUNNEL URL: $TUNNEL_URL"
+            echo "Use this URL as API_BASE_URL in Streamlit Cloud Secrets"
+            echo "=========================================================="
+
+            echo "==== 7. Prune Dangling Images ===="
             docker image prune -f
             echo "Deployment successful!"

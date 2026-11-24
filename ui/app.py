@@ -1505,7 +1505,20 @@ def render_login():
                             else:
                                 st.error(f"Sign-in failed ({r.status_code}): {r.text}")
                         except Exception as e:
-                            st.error(f"Cannot connect to API service: {e}")
+                            st.error(f"""
+                            **Cannot connect to API service at `{API_BASE}`**
+                            
+                            **Error:** {e}
+                            
+                            **How to fix for Streamlit Community Cloud:**
+                            1. Open your app settings on **share.streamlit.io** -> **Settings -> Secrets**.
+                            2. Set your Cloudflare Tunnel URL:
+                            ```toml
+                            API_BASE_URL = "https://<your-jobradar-tunnel>.trycloudflare.com"
+                            DEFAULT_USER_EMAIL = "boobesh2509@gmail.com"
+                            ```
+                            3. Save and reboot your app.
+                            """)
 
 # -----------------------------------------------------------------------------
 # Main Application Console (High-Density JobRadar Console)
