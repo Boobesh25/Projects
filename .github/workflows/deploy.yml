@@ -126,6 +126,8 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
+          timeout: 60s
+          command_timeout: 20m
           script: |
             set -e
             ACTOR_LOWER=$(echo "${{ github.actor }}" | tr '[:upper:]' '[:lower:]')
@@ -177,74 +179,98 @@ jobs:
 
             # Generate production docker-compose.yml for JobRadar
             cat << 'EOF' > docker-compose.yml
-            version: '3.8'
+version: '3.8'
 
-            services:
-              api:
-                image: ghcr.io/boobesh25/projects/jobradar-api:latest
-                container_name: jobradar_api
-                restart: always
-                ports:
-                  - "8001:8000"
-                environment:
-                  - PORT_API=8000
-                  - DEFAULT_USER_EMAIL=boobesh2509@gmail.com
-                  - DATABASE_URL=sqlite+aiosqlite:////app/data/career_portal.db
-                volumes:
-                  - ./data:/app/data
-                healthcheck:
-                  test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/api/health"]
-                  interval: 15s
-                  timeout: 5s
-                  retries: 3
+services:
+  api:
+    image: ghcr.io/boobesh25/projects/jobradar-api:latest
+    container_name: jobradar_api
+    restart: always
+    ports:
+      - "8001:8000"
+    environment:
+      - PORT_API=8000
+      - DEFAULT_USER_EMAIL=boobesh2509@gmail.com
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/career_portal.db
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
-              ui:
-                image: ghcr.io/boobesh25/projects/jobradar-ui:latest
-                container_name: jobradar_ui
-                restart: always
-                ports:
-                  - "8501:8501"
-                environment:
-                  - PORT_UI=8501
-                  - API_BASE_URL=http://api:8000
-                  - DEFAULT_USER_EMAIL=boobesh2509@gmail.com
-                depends_on:
-                  api:
-                    condition: service_healthy
-                healthcheck:
-                  test: ["CMD", "curl", "-f", "http://127.0.0.1:8501/_stcore/health"]
-                  interval: 15s
-                  timeout: 5s
-                  retries: 3
+  ui:
+    image: ghcr.io/boobesh25/projects/jobradar-ui:latest
+    container_name: jobradar_ui
+    restart: always
+    ports:
+      - "8501:8501"
+    environment:
+      - PORT_UI=8501
+      - API_BASE_URL=http://api:8000
+      - DEFAULT_USER_EMAIL=boobesh2509@gmail.com
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8501/_stcore/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
-              tunnel:
-                image: cloudflare/cloudflared:latest
-                container_name: jobradar_tunnel
-                restart: always
-                command: tunnel --no-autoupdate --url http://api:8000
-                depends_on:
-                  api:
-                    condition: service_healthy
-            EOF
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: jobradar_tunnel
+    restart: always
+    command: tunnel --no-autoupdate --url http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+EOF
 
-            echo "==== 3. Clean Old Images & Pull Latest from GHCR ===="
-            docker image prune -f || true
-            docker system prune -f || true
-            docker pull "$API_IMAGE"
-            docker pull "$UI_IMAGE"
-            docker tag "$API_IMAGE" jobradar_api:latest || true
-            docker tag "$UI_IMAGE" jobradar_ui:latest || true
+            echo "==== 3. Pull Latest Images from GHCR ===="
+            docker pull "$API_IMAGE" || true
+            docker pull "$UI_IMAGE" || true
 
             echo "==== 4. Restart Application Services with Zero Downtime ===="
-            $DC up -d
+            $DC up -d --remove-orphans
 
-            echo "==== 5. Health Check Verification ===="
-            sleep 10
-            (curl -f http://127.0.0.1:8001/api/health || curl -f http://127.0.0.1:8000/api/health) || (echo "API Health check failed!" && exit 1)
-            curl -f http://127.0.0.1:8501/_stcore/health || (echo "UI Health check failed!" && exit 1)
+            echo "==== 5. Resilient Health Check Verification ===="
+            API_OK=false
+            for i in $(seq 1 25); do
+                if curl -sf http://127.0.0.1:8001/api/health || curl -sf http://127.0.0.1:8000/api/health; then
+                    echo "API is healthy!"
+                    API_OK=true
+                    break
+                fi
+                echo "Waiting for API service to initialize (attempt $i/25)..."
+                sleep 3
+            done
+            if [ "$API_OK" = false ]; then
+                echo "API Health check timed out!"
+                docker logs jobradar_api || true
+                exit 1
+            fi
+
+            UI_OK=false
+            for i in $(seq 1 25); do
+                if curl -sf http://127.0.0.1:8501/_stcore/health; then
+                    echo "UI is healthy!"
+                    UI_OK=true
+                    break
+                fi
+                echo "Waiting for UI service to initialize (attempt $i/25)..."
+                sleep 3
+            done
+            if [ "$UI_OK" = false ]; then
+                echo "UI Health check timed out!"
+                docker logs jobradar_ui || true
+                exit 1
+            fi
 
             echo "==== 6. Retrieve Cloudflare Tunnel URL ===="
-            sleep 8
+            sleep 6
             TUNNEL_URL=$(docker logs jobradar_tunnel 2>&1 | grep -o 'https://[a-zA-Z0-9-]*\.trycloudflare\.com' | head -n 1 || true)
             echo "=========================================================="
             echo "CLOUDFLARE TUNNEL URL: $TUNNEL_URL"
@@ -252,5 +278,5 @@ jobs:
             echo "=========================================================="
 
             echo "==== 7. Prune Dangling Images ===="
-            docker image prune -f
+            docker image prune -f || true
             echo "Deployment successful!"
