@@ -134,10 +134,35 @@ jobs:
             UI_IMAGE="ghcr.io/${REPO_LOWER}/jobradar-ui:latest"
 
             echo "==== 1. Log in to GitHub Container Registry ===="
-            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin
+            LOGIN_OK=false
+            if [ -n "${{ secrets.GHCR_TOKEN }}" ]; then
+                if echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin; then
+                    echo "Authenticated to GHCR via GHCR_TOKEN"
+                    LOGIN_OK=true
+                fi
+            fi
+            if [ "$LOGIN_OK" = false ]; then
+                echo "GHCR_TOKEN not accepted or expired. Trying GITHUB_TOKEN..."
+                if echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$ACTOR_LOWER" --password-stdin; then
+                    echo "Authenticated to GHCR via GITHUB_TOKEN"
+                    LOGIN_OK=true
+                else
+                    echo "Notice: Direct GHCR login failed. Proceeding (images may be public or cached)..."
+                fi
+            fi
 
-            echo "==== 2. Navigate to Server Application Directory ===="
-            cd ${{ secrets.SERVER_APP_DIR }}
+            echo "==== 2. Setup Dedicated Application Directory on Server ===="
+            APP_DIR="${{ secrets.SERVER_APP_DIR }}/../jobradar"
+            mkdir -p "$APP_DIR" 2>/dev/null || APP_DIR="$HOME/jobradar"
+            mkdir -p "$APP_DIR"
+            cd "$APP_DIR"
+            mkdir -p data
+            echo "Deployment directory: $(pwd)"
+
+            # Auto-copy .env from parent or SERVER_APP_DIR if present
+            if [ -f "${{ secrets.SERVER_APP_DIR }}/.env" ] && [ ! -f ".env" ]; then
+                cp "${{ secrets.SERVER_APP_DIR }}/.env" .env || true
+            fi
 
             # Auto-detect whether server uses 'docker compose' (v2 plugin) or 'docker-compose' (v1/v2 standalone)
             if docker compose version >/dev/null 2>&1; then
@@ -150,21 +175,48 @@ jobs:
             fi
             echo "Using Compose command: $DC"
 
-            # Auto-detect compose file
-            COMPOSE_FILE=""
-            for f in docker-compose.server.yml docker-compose.prod.yml docker-compose.yml; do
-                if [ -f "$f" ]; then
-                    COMPOSE_FILE="$f"
-                    break
-                fi
-            done
+            # Generate production docker-compose.yml for JobRadar
+            cat << 'EOF' > docker-compose.yml
+version: '3.8'
 
-            if [ -z "$COMPOSE_FILE" ]; then
-                echo "No compose file found in $(pwd)!"
-                ls -la
-                exit 1
-            fi
-            echo "Using Compose file: $COMPOSE_FILE"
+services:
+  api:
+    image: ghcr.io/boobesh25/projects/jobradar-api:latest
+    container_name: jobradar_api
+    restart: always
+    ports:
+      - "8001:8000"
+    environment:
+      - PORT_API=8000
+      - DEFAULT_USER_EMAIL=boobesh2509@gmail.com
+      - DATABASE_URL=sqlite+aiosqlite:////app/data/career_portal.db
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  ui:
+    image: ghcr.io/boobesh25/projects/jobradar-ui:latest
+    container_name: jobradar_ui
+    restart: always
+    ports:
+      - "8501:8501"
+    environment:
+      - PORT_UI=8501
+      - API_BASE_URL=http://api:8000
+      - DEFAULT_USER_EMAIL=boobesh2509@gmail.com
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8501/_stcore/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+EOF
 
             echo "==== 3. Pull Latest Docker Images from GHCR ===="
             docker pull "$API_IMAGE"
@@ -173,7 +225,7 @@ jobs:
             docker tag "$UI_IMAGE" jobradar_ui:latest || true
 
             echo "==== 4. Restart Application Services with Zero Downtime ===="
-            $DC -f "$COMPOSE_FILE" up -d
+            $DC up -d
 
             echo "==== 5. Health Check Verification ===="
             sleep 10
