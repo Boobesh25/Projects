@@ -174,6 +174,25 @@ jobs:
             fi
             touch .env || true
 
+            echo "==== 2.1 Free Disk Space on Server ===="
+            echo "Disk space before cleanup:"
+            df -h /
+
+            # Stop and remove old JobRadar containers to release snapshot locks
+            docker stop jobradar_api jobradar_ui 2>/dev/null || true
+            docker rm jobradar_api jobradar_ui 2>/dev/null || true
+
+            # Prune dangling/unused images and build caches (does not affect active running containers like postgres/redis)
+            docker builder prune -af 2>/dev/null || true
+            docker image prune -af 2>/dev/null || true
+            docker system prune -f 2>/dev/null || true
+
+            # Vacuum old logs if present
+            truncate -s 0 /var/lib/docker/containers/*/*-json.log 2>/dev/null || true
+
+            echo "Disk space after cleanup:"
+            df -h /
+
             echo "==== 3. Pull Latest JobRadar API Image ===="
             PULLED_API=false
             for attempt in 1 2 3; do
@@ -193,8 +212,6 @@ jobs:
             docker tag "$API_IMAGE" jobradar_api:latest || true
 
             echo "==== 4. Restart JobRadar API Container on Host Port 8001 ===="
-            docker stop jobradar_api 2>/dev/null || true
-            docker rm jobradar_api 2>/dev/null || true
             docker run -d \
               --name jobradar_api \
               --restart always \
@@ -207,19 +224,23 @@ jobs:
               "$API_IMAGE"
 
             echo "==== 5. Pull & Restart JobRadar UI Container on Host Port 8501 ===="
-            if docker pull "$UI_IMAGE"; then
-                docker tag "$UI_IMAGE" jobradar_ui:latest || true
-                docker stop jobradar_ui 2>/dev/null || true
-                docker rm jobradar_ui 2>/dev/null || true
-                docker run -d \
-                  --name jobradar_ui \
-                  --restart always \
-                  -p 8501:8501 \
-                  --env-file .env \
-                  -e PORT_UI=8501 \
-                  -e API_BASE_URL="http://127.0.0.1:8001" \
-                  -e DEFAULT_USER_EMAIL=boobesh2509@gmail.com \
-                  "$UI_IMAGE" || true
+            FREE_MB=$(df -m / | awk 'NR==2 {print $4}')
+            echo "Available disk space: ${FREE_MB}MB"
+            if [ "$FREE_MB" -gt 1500 ]; then
+                if docker pull "$UI_IMAGE"; then
+                    docker tag "$UI_IMAGE" jobradar_ui:latest || true
+                    docker run -d \
+                      --name jobradar_ui \
+                      --restart always \
+                      -p 8501:8501 \
+                      --env-file .env \
+                      -e PORT_UI=8501 \
+                      -e API_BASE_URL="http://127.0.0.1:8001" \
+                      -e DEFAULT_USER_EMAIL=boobesh2509@gmail.com \
+                      "$UI_IMAGE" || true
+                fi
+            else
+                echo "Notice: Disk space is tight (${FREE_MB}MB). Skipped container jobradar_ui to preserve disk for API."
             fi
 
             echo "==== 6. Verify Health on Host Port 8001 ===="
