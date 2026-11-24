@@ -11,6 +11,7 @@ Provides REST endpoints for:
 
 import os
 import sys
+import asyncio
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from typing import List, Optional, Dict, Any
@@ -24,25 +25,28 @@ _core_dir = os.path.join(_root_dir, "core")
 if _core_dir not in sys.path:
     sys.path.insert(0, _core_dir)
 
-from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Query
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Query, Header, status
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, func
 
 try:
-    from core.db_models import User, CandidateProfile, CompanyJob, AnalysisJobResult
-    from core.db_engine import init_db, get_db_session
-    from core.auth_service import create_access_token, verify_google_id_token, get_current_user_payload
+    from core.db_models import User, CandidateProfile, CompanyJob, AnalysisJobResult, SyncJobState, utc_now_naive
+    from core.db_engine import init_db, get_db_session, get_session_factory
+    from core.auth_service import create_access_token, verify_google_id_token, get_current_user_payload, verify_access_token, security
     from core.cv_analyzer import DocumentProfileAnalyzer
     from core.company_crawler import CompanyService
+    from core.job_sync_service import JobSyncEngine, SyncAlreadyRunningError
 except ImportError:
-    from db_models import User, CandidateProfile, CompanyJob, AnalysisJobResult
-    from db_engine import init_db, get_db_session
-    from auth_service import create_access_token, verify_google_id_token, get_current_user_payload
+    from db_models import User, CandidateProfile, CompanyJob, AnalysisJobResult, SyncJobState, utc_now_naive
+    from db_engine import init_db, get_db_session, get_session_factory
+    from auth_service import create_access_token, verify_google_id_token, get_current_user_payload, verify_access_token, security
     from cv_analyzer import DocumentProfileAnalyzer
     from company_crawler import CompanyService
+    from job_sync_service import JobSyncEngine, SyncAlreadyRunningError
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -805,6 +809,122 @@ async def tailor_drive_upload(
         portal=req.portal
     )
     return meta
+
+# -----------------------------------------------------------------------------
+# Autonomous Job Sync Engine Endpoints (Option A Auth & Mutual Exclusion)
+# -----------------------------------------------------------------------------
+JOB_SYNC_SECRET = os.getenv("JOB_SYNC_SECRET", "jobradar_sync_secret_dev_2026")
+
+async def verify_sync_authorization(
+    x_sync_secret: Optional[str] = Header(None, alias="X-Sync-Secret"),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)
+) -> str:
+    """
+    Validates sync trigger authorization via:
+    1. X-Sync-Secret header (e.g. from GitHub Actions)
+    2. Admin user Bearer JWT token (boobesh2509@gmail.com)
+    Returns: trigger identity string
+    """
+    if x_sync_secret and x_sync_secret.strip() == JOB_SYNC_SECRET.strip():
+        return "GitHub Actions"
+
+    if credentials and credentials.credentials:
+        try:
+            payload = verify_access_token(credentials.credentials)
+            email = payload.get("email", "")
+            if email == "boobesh2509@gmail.com":
+                return f"Admin UI ({email})"
+        except Exception:
+            pass
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Unauthorized. A valid X-Sync-Secret header or Admin authentication token is required."
+    )
+
+@app.post("/api/jobs/sync", status_code=status.HTTP_202_ACCEPTED)
+async def trigger_job_sync(
+    triggered_by: str = Depends(verify_sync_authorization),
+    session: AsyncSession = Depends(get_db_session)
+):
+    """
+    Initiates asynchronous multi-source job ingestion engine with atomic mutual-exclusion locking.
+    Can be triggered via:
+    - GitHub Actions schedule (X-Sync-Secret header)
+    - Admin UI (boobesh2509@gmail.com)
+    Returns 202 Accepted immediately without waiting.
+    If a sync is already running, returns 409 Conflict.
+    """
+    try:
+        lock_state = await JobSyncEngine.acquire_lock(session, triggered_by=triggered_by)
+        state_id = lock_state.id
+    except SyncAlreadyRunningError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e)
+        )
+
+    # Launch background task non-blocking
+    session_factory = get_session_factory()
+    asyncio.create_task(JobSyncEngine.run_full_sync(session_factory, state_id=state_id, triggered_by=triggered_by))
+
+    return {
+        "status": "RUNNING",
+        "message": f"Job sync initiated asynchronously by {triggered_by}.",
+        "triggered_by": triggered_by,
+        "initiated_at": lock_state.started_at.isoformat() if lock_state.started_at else utc_now_naive().isoformat()
+    }
+
+@app.get("/api/jobs/sync/status")
+async def get_job_sync_status(
+    session: AsyncSession = Depends(get_db_session)
+):
+    """
+    Returns live execution status, current progress percentage, active stage, and ingestion metrics.
+    """
+    latest = await JobSyncEngine.get_current_sync_state(session)
+
+    # Query total active jobs currently stored in database
+    active_jobs_count = await session.scalar(
+        select(func.count()).select_from(CompanyJob).where(CompanyJob.is_active == True)
+    ) or 0
+
+    if not latest:
+        return {
+            "status": "IDLE",
+            "stage": "System Ready",
+            "progress_pct": 0,
+            "total_ingested": 0,
+            "new_jobs_added": 0,
+            "pruned_jobs": 0,
+            "triggered_by": None,
+            "started_at": None,
+            "completed_at": None,
+            "elapsed_seconds": 0,
+            "error_message": None,
+            "active_jobs_in_db": active_jobs_count
+        }
+
+    now = utc_now_naive()
+    elapsed = 0
+    if latest.started_at:
+        end_time = latest.completed_at if latest.completed_at else now
+        elapsed = max(0, int((end_time - latest.started_at).total_seconds()))
+
+    return {
+        "status": latest.status,
+        "stage": latest.stage,
+        "progress_pct": latest.progress_pct,
+        "total_ingested": latest.total_ingested,
+        "new_jobs_added": latest.new_jobs_added,
+        "pruned_jobs": latest.pruned_jobs,
+        "triggered_by": latest.triggered_by,
+        "started_at": latest.started_at.isoformat() if latest.started_at else None,
+        "completed_at": latest.completed_at.isoformat() if latest.completed_at else None,
+        "elapsed_seconds": elapsed,
+        "error_message": latest.error_message,
+        "active_jobs_in_db": active_jobs_count
+    }
 
 if __name__ == "__main__":
     import uvicorn

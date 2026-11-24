@@ -48,9 +48,31 @@ async def init_db():
     """Initializes tables on startup with seamless offline/SQLite fallback."""
     global _engine, _session_factory, DATABASE_URL, _is_initialized
     eng = get_engine()
+    from sqlalchemy import text
     try:
         async with eng.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            try:
+                if "sqlite" in DATABASE_URL:
+                    try:
+                        await conn.execute(text("ALTER TABLE company_jobs ADD COLUMN is_active BOOLEAN DEFAULT 1;"))
+                    except Exception:
+                        pass
+                    try:
+                        await conn.execute(text("ALTER TABLE company_jobs ADD COLUMN posted_date DATETIME;"))
+                    except Exception:
+                        pass
+                else:
+                    await conn.execute(text("ALTER TABLE company_jobs ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;"))
+                    await conn.execute(text("ALTER TABLE company_jobs ADD COLUMN IF NOT EXISTS posted_date TIMESTAMP;"))
+                    await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_company_jobs_is_active ON company_jobs(is_active);"))
+                    try:
+                        await conn.execute(text("ALTER TABLE company_jobs ALTER COLUMN location TYPE VARCHAR(1024);"))
+                        await conn.execute(text("ALTER TABLE company_jobs ALTER COLUMN title TYPE VARCHAR(512);"))
+                    except Exception:
+                        pass
+            except Exception as e_mig:
+                print(f"Migration notice: {e_mig}")
             print(f"Connected to PostgreSQL database ({DATABASE_URL})")
             _is_initialized = True
     except Exception as e:
@@ -62,6 +84,17 @@ async def init_db():
         _session_factory = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
         async with _engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            try:
+                try:
+                    await conn.execute(text("ALTER TABLE company_jobs ADD COLUMN is_active BOOLEAN DEFAULT 1;"))
+                except Exception:
+                    pass
+                try:
+                    await conn.execute(text("ALTER TABLE company_jobs ADD COLUMN posted_date DATETIME;"))
+                except Exception:
+                    pass
+            except Exception:
+                pass
         print("Local SQLite database initialized successfully.")
         _is_initialized = True
 

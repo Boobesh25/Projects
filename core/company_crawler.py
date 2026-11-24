@@ -943,38 +943,42 @@ class CompanyService:
     @classmethod
     async def sync_daily_jobs(cls, session: AsyncSession, target_count: int = 5000, force_refresh: bool = False, candidate_domain: str = "Cloud & DevOps") -> List[CompanyJob]:
         """
-        Loads jobs for today from PostgreSQL / SQLite.
-        Maintains an extensive and expandable company database across global sectors with zero artificial limits.
+        Loads active jobs from PostgreSQL / SQLite.
+        Preserves 100% of authentic jobs synced by JobSyncEngine across official Career ATS,
+        LinkedIn, Naukri, and remote networks.
         """
         today = datetime.now(timezone.utc).date()
-        
-        stmt = select(CompanyJob).where(CompanyJob.fetched_date == today)
+        from sqlalchemy import or_
+
+        # 1. Fetch all active jobs stored in database
+        stmt = select(CompanyJob).where(CompanyJob.is_active == True)
         result = await session.execute(stmt)
         cached_jobs = list(result.scalars().all())
 
-        # Invalidate old hardcoded seed jobs if present in cache
-        has_mismatched_seed = False
-        has_stale_search_urls = False
-        if cached_jobs:
-            has_mismatched_seed = any(("INFSYS-" in (j.job_id or "") or "CAN-" in (j.job_id or "") or "NO-ROLE-FOUND" in (j.job_id or "")) for j in cached_jobs)
-
-        registry_total = sum(len(v) for v in cls.COMPANY_REGISTRY.values())
-        is_underpopulated = len(cached_jobs) < (registry_total * 0.8)
-
-        if (force_refresh or has_mismatched_seed or has_stale_search_urls or is_underpopulated) and cached_jobs:
-            del_stmt = delete(CompanyJob).where(CompanyJob.fetched_date == today)
+        # If force_refresh is requested, only clear placeholder jobs (OPP- or NO-ROLE-FOUND)
+        # NEVER delete real synced jobs from JobSyncEngine (GH-, LEVER-, LI-, NAUKRI-, EXT-)!
+        if force_refresh:
+            del_stmt = delete(CompanyJob).where(
+                or_(
+                    CompanyJob.job_id.like("OPP-%"),
+                    CompanyJob.job_id == "NO-ROLE-FOUND"
+                )
+            )
             await session.execute(del_stmt)
             await session.commit()
-            cached_jobs = []
-
-        if cached_jobs and not force_refresh and not has_mismatched_seed and not has_stale_search_urls and not is_underpopulated:
-            return cached_jobs
+            
+            stmt = select(CompanyJob).where(CompanyJob.is_active == True)
+            result = await session.execute(stmt)
+            cached_jobs = list(result.scalars().all())
 
         seen_companies = set(j.company_name.strip().lower() for j in cached_jobs)
         new_jobs: List[CompanyJob] = list(cached_jobs)
         added_count = 0
 
-        seen_req_keys = set()
+        seen_req_keys = set(
+            ((j.company_name or "").strip().lower(), str(j.job_id or "").strip())
+            for j in cached_jobs
+        )
 
         # 2. Dynamic Live Feeds Ingestion across LinkedIn, Naukri & Open Career Boards
         # A) LinkedIn Live Ingestion
@@ -983,11 +987,24 @@ class CompanyService:
             li_postings = JobDiscoveryEngine.fetch_from_linkedin(keywords=search_kw, location="India", limit=12)
             for p in li_postings:
                 c_name = p.company.strip()
-                req_k = (c_name.lower(), p.job_id)
+                req_k = (c_name.lower(), str(p.job_id).strip())
                 if req_k in seen_req_keys:
                     continue
                 seen_req_keys.add(req_k)
                 seen_companies.add(c_name.lower())
+
+                from core.jd_formatter import JobDescriptionFormatter
+                full_li_jd = JobDescriptionFormatter.get_full_job_description({
+                    "company_name": c_name,
+                    "title": p.title,
+                    "location": p.location,
+                    "work_mode": "Hybrid" if "india" in p.location.lower() else "Remote",
+                    "experience_text": "2 - 5 Years",
+                    "source_channel": "LinkedIn",
+                    "job_id": p.job_id or f"LI-{abs(hash(p.url)) % 10000000}",
+                    "skills_required": p.tech_stack or ["python", "genai"],
+                    "raw_description": p.raw_markdown or p.title,
+                })
 
                 job_rec = CompanyJob(
                     job_id=p.job_id or f"LI-{abs(hash(p.url)) % 10000000}",
@@ -1002,7 +1019,7 @@ class CompanyService:
                     max_exp=5.0,
                     url=p.url,
                     skills_required=p.tech_stack or ["python", "genai"],
-                    raw_description=p.raw_markdown or p.title,
+                    raw_description=full_li_jd,
                     fetched_date=today
                 )
                 session.add(job_rec)
@@ -1016,11 +1033,24 @@ class CompanyService:
             nk_postings = JobDiscoveryEngine.fetch_from_naukri(keywords=search_kw, location="India", limit=10)
             for p in nk_postings:
                 c_name = p.company.strip()
-                req_k = (c_name.lower(), p.job_id)
+                req_k = (c_name.lower(), str(p.job_id).strip())
                 if req_k in seen_req_keys:
                     continue
                 seen_req_keys.add(req_k)
                 seen_companies.add(c_name.lower())
+
+                from core.jd_formatter import JobDescriptionFormatter
+                full_nk_jd = JobDescriptionFormatter.get_full_job_description({
+                    "company_name": c_name,
+                    "title": p.title,
+                    "location": p.location,
+                    "work_mode": "Hybrid",
+                    "experience_text": f"{int(p.min_experience_years or 2)} - {int(p.max_experience_years or 5)} Years",
+                    "source_channel": "Naukri",
+                    "job_id": p.job_id,
+                    "skills_required": p.tech_stack or ["python", "genai"],
+                    "raw_description": p.raw_markdown or p.title,
+                })
 
                 job_rec = CompanyJob(
                     job_id=p.job_id,
@@ -1035,58 +1065,13 @@ class CompanyService:
                     max_exp=p.max_experience_years or 5.0,
                     url=p.url,
                     skills_required=p.tech_stack or ["python", "genai"],
-                    raw_description=p.raw_markdown or p.title,
+                    raw_description=full_nk_jd,
                     fetched_date=today
                 )
                 session.add(job_rec)
                 new_jobs.append(job_rec)
         except Exception:
             pass
-
-        # C) Career Page Open APIs (Arbeitnow, Remotive, Jobicy, RemoteOK)
-        tags = ["devops", "cloud", "aws", "kubernetes", "backend"] if candidate_domain == "Cloud & DevOps" else ["ai", "python", "machine-learning", "data", "backend"]
-        for tag in tags:
-            try:
-                postings = JobDiscoveryEngine.fetch_from_open_apis(tag=tag, limit=12)
-                for p in postings:
-                    comp_name = p.company.strip()
-                    req_k = (comp_name.lower(), p.job_id or p.url)
-                    if req_k in seen_req_keys:
-                        continue
-                    seen_req_keys.add(req_k)
-                    seen_companies.add(comp_name.lower())
-
-                    combined_txt = f"{p.company} {p.title} {' '.join(p.tech_stack)}".lower()
-                    if any(kw in combined_txt for kw in ["canonical", "infosys", "ibm", "siemens", "cisco", "accenture", "capgemini"]):
-                        grp = "MNC"
-                    elif any(kw in combined_txt for kw in ["ai", "machine learning", "ml", "genai", "deep learning", "llm", "agent"]):
-                        grp = "AI_Startup"
-                    else:
-                        grp = "Remote_First"
-
-                    loc_lower = p.location.lower()
-                    w_mode = "Remote" if ("remote" in loc_lower or "anywhere" in loc_lower) else ("Hybrid" if "hybrid" in loc_lower else "On-site")
-
-                    job_rec = CompanyJob(
-                        job_id=p.job_id or f"EXT-{abs(hash(p.url)) % 1000000}",
-                        company_name=comp_name,
-                        company_group=grp,
-                        source_channel="Career Page",
-                        title=p.title,
-                        location=p.location,
-                        work_mode=w_mode,
-                        experience_text=f"{int(p.min_experience_years or 2)} - {int(p.max_experience_years or 5)} Years",
-                        min_exp=p.min_experience_years or 2.0,
-                        max_exp=p.max_experience_years or 5.0,
-                        url=p.url,
-                        skills_required=p.tech_stack or ["python", "ai"],
-                        raw_description=p.raw_markdown[:1200] if p.raw_markdown else p.title,
-                        fetched_date=today
-                    )
-                    session.add(job_rec)
-                    new_jobs.append(job_rec)
-            except Exception:
-                pass
 
         # 3. Dynamic Multi-Channel Opportunities across Global Catalog
         domain_skills_map = {
@@ -1261,6 +1246,20 @@ class CompanyService:
                 match_cat = "Role Matches, JD Too Wide"
                 suggestion = "Skill has to be improved"
 
+            from core.jd_formatter import JobDescriptionFormatter
+            raw_source_desc = getattr(job, "raw_description", "") or posting.raw_markdown or ""
+            full_jd = JobDescriptionFormatter.get_full_job_description({
+                "company_name": job.company_name,
+                "title": posting.title,
+                "location": posting.location,
+                "work_mode": job.work_mode,
+                "experience_text": f"{int(posting.min_experience_years or 2)} - {int(posting.max_experience_years or 5)} Years",
+                "source_channel": channel,
+                "job_id": posting.job_id,
+                "skills_required": posting.tech_stack,
+                "raw_description": raw_source_desc
+            })
+
             record_item = {
                 "db_job_id": job.id,
                 "job_apply_url": posting.url,
@@ -1285,7 +1284,8 @@ class CompanyService:
                 "lag_skills": res.missing_skills,
                 "framing_opportunities": res.framing_opportunities,
                 "skills_required": posting.tech_stack,
-                "raw_markdown": getattr(job, "raw_description", "") or "",
+                "raw_markdown": full_jd,
+                "raw_description": full_jd,
                 "suggestion": suggestion,
                 "tailoring_tip": res.tailoring_tips[0] if res.tailoring_tips else f"Tailor application to target {posting.title}."
             }
@@ -1311,6 +1311,18 @@ class CompanyService:
                     c_li = cls.get_official_linkedin_url(c_clean, cand_title)
                     c_nk = cls.get_official_naukri_url(c_clean, cand_title)
                     skills_sample = list(prof_dict.get("verified_skills", []))[:6]
+                    from core.jd_formatter import JobDescriptionFormatter
+                    syn_jd = JobDescriptionFormatter.get_full_job_description({
+                        "company_name": c_clean,
+                        "title": cand_title,
+                        "location": "Global / India / Remote",
+                        "work_mode": "Hybrid / Onsite",
+                        "experience_text": f"{prof_dict.get('candidate', {}).get('experience_years', 3)}+ Years",
+                        "source_channel": "Direct & Platforms",
+                        "job_id": f"REQ-{abs(hash(c_clean)) % 9000 + 1000}",
+                        "skills_required": skills_sample,
+                        "raw_description": f"Direct multi-channel evaluation for {c_clean} targeting {cand_title}."
+                    })
                     on_demand_item = {
                         "db_job_id": None,
                         "job_apply_url": c_url,
@@ -1334,7 +1346,8 @@ class CompanyService:
                         "lag_skills": [],
                         "framing_opportunities": [],
                         "skills_required": skills_sample,
-                        "raw_markdown": f"Direct multi-channel evaluation for {c_clean} targeting {cand_title}.",
+                        "raw_markdown": syn_jd,
+                        "raw_description": syn_jd,
                         "suggestion": "Apply Directly",
                         "tailoring_tip": f"Active target requisition for {c_clean}. Review open roles across Career Portal, LinkedIn, and Naukri."
                     }

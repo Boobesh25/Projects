@@ -92,15 +92,18 @@ def render_html(html_str: str):
 def resolve_career_url(item: Optional[Dict[str, Any]], company_name: str) -> str:
     """
     Guarantees official direct requisition URL.
-    Allows live direct job-listings links (e.g. on Naukri, LinkedIn, or ATS).
-    Falls back to official company job board if empty or expired.
+    Never returns third-party boards (Arbeitnow, Jobicy) as a Career Page.
+    Never returns expired Naukri links.
     """
     if item:
         raw_url = item.get("job_apply_url") or item.get("url") or ""
         if raw_url and "google.com" not in raw_url:
-            if "expJD=true" in raw_url:
-                target_kw = st.session_state.get("target_keyword", "cloud devops")
-                return CompanyService.get_official_naukri_url(company_name, target_kw)
+            raw_low = raw_url.lower()
+            if any(b in raw_low for b in ["arbeitnow.com", "jobicy.com", "remotive.com", "remoteok.com"]):
+                return CompanyService.get_official_career_url(company_name)
+            if "naukri.com" in raw_low and ("expjd=true" in raw_low or "job-listings-" in raw_low):
+                title = item.get("title", "")
+                return CompanyService.get_official_naukri_url(company_name, title)
             return raw_url
     return CompanyService.get_official_career_url(company_name)
 
@@ -1105,6 +1108,175 @@ div[data-baseweb="input"] > div {
         font-size: 11.5px !important;
     }
 }
+
+/* In-Column Table Filters Compact Alignment */
+div[data-testid="column"] div[data-testid="stTextInput"] input,
+div[data-testid="column"] div[data-testid="stSelectbox"] div[data-baseweb="select"] {
+    background-color: #151A26 !important;
+    border: 1px solid #28354E !important;
+    border-radius: 4px !important;
+    font-size: 11.5px !important;
+    color: #E8EAED !important;
+    height: 32px !important;
+    min-height: 32px !important;
+}
+div[data-testid="column"] div[data-testid="stTextInput"] input:focus,
+div[data-testid="column"] div[data-testid="stSelectbox"] div[data-baseweb="select"]:focus-within {
+    border-color: #4285F4 !important;
+    box-shadow: 0 0 0 1px #4285F4 !important;
+}
+div[data-testid="column"] div[data-testid="stTextInput"],
+div[data-testid="column"] div[data-testid="stSelectbox"] {
+    margin-bottom: 3px !important;
+}
+
+/* 3/4 Screen Modal for Job Details & Complete JD */
+.jd-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(10, 14, 22, 0.85);
+    backdrop-filter: blur(6px);
+    z-index: 9999999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    box-sizing: border-box;
+}
+.jd-modal-overlay:target {
+    display: flex !important;
+}
+.jd-modal-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+    cursor: default;
+}
+.jd-modal-box {
+    position: relative;
+    z-index: 2;
+    width: 75vw !important;
+    max-width: 75vw !important;
+    max-height: 85vh !important;
+    background: #171C28 !important;
+    border: 1px solid #28354E !important;
+    border-radius: 8px !important;
+    padding: 24px 28px !important;
+    overflow-y: auto !important;
+    box-shadow: 0 16px 50px rgba(0, 0, 0, 0.85) !important;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+@media screen and (max-width: 900px) {
+    .jd-modal-box {
+        width: 94vw !important;
+        max-width: 94vw !important;
+        padding: 16px !important;
+    }
+}
+.jd-modal-header {
+    border-bottom: 1px solid #28354E;
+    padding-bottom: 12px;
+}
+.jd-modal-close {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid #374151;
+    color: #E8EAED !important;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    font-weight: 700;
+    text-decoration: none !important;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.jd-modal-close:hover {
+    background: #DC2626;
+    border-color: #EF4444;
+    color: #FFFFFF !important;
+    transform: scale(1.1);
+}
+.role-info-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(66, 133, 244, 0.16);
+    color: #8AB4F8 !important;
+    border: 1px solid rgba(138, 180, 248, 0.35);
+    font-size: 11px;
+    font-weight: 700;
+    text-decoration: none !important;
+    margin-left: 6px;
+    transition: all 0.15s ease;
+    vertical-align: middle;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.role-info-icon:hover {
+    background: #1A73E8;
+    color: #FFFFFF !important;
+    border-color: #8AB4F8;
+    transform: scale(1.15);
+}
+.jd-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid #28354E;
+    border-radius: 6px;
+    padding: 12px 16px;
+}
+@media screen and (max-width: 768px) {
+    .jd-meta-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+.jd-meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.jd-meta-label {
+    font-size: 10px;
+    color: #9AA0A6;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.jd-meta-value {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: #E8EAED;
+}
+.jd-raw-text {
+    white-space: pre-wrap;
+    font-family: 'Roboto', sans-serif;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #D1D5DB;
+    background: #111622;
+    border: 1px solid #232B3E;
+    border-radius: 6px;
+    padding: 16px 20px;
+    max-height: 380px;
+    overflow-y: auto;
+}
 </style>
 """
 render_html(CONSOLE_THEME_CSS)
@@ -1677,10 +1849,11 @@ def render_main_dashboard():
             "Deep Analysis & Tailoring",
             "Candidate Profile",
             "Settings & Re-upload",
-            "Monitored Companies"
+            "Monitored Companies",
+            "Job Sync Engine"
         ]
         for v in valid_navs:
-            if v.lower() == target_nav.lower() or ("deep" in target_nav.lower() and "tailor" in v.lower()):
+            if v.lower() == target_nav.lower() or ("deep" in target_nav.lower() and "tailor" in v.lower()) or ("sync" in target_nav.lower() and "sync" in v.lower()):
                 st.session_state.nav_selection = v
                 break
     if "job_id" in st.query_params:
@@ -1755,6 +1928,10 @@ def render_main_dashboard():
             "Settings & Re-upload",
             "Monitored Companies"
         ]
+        # Admin menu item restricted exclusively to system administrator
+        if (user_email or "").strip().lower() == "boobesh2509@gmail.com":
+            menu_options.append("Job Sync Engine")
+
         if "nav_selection" not in st.session_state or st.session_state.nav_selection not in menu_options:
             st.session_state.nav_selection = menu_options[0]
 
@@ -2149,10 +2326,11 @@ def render_main_dashboard():
         eval_count = len(target_pool)
 
         # Compact Scope Information Pill
+        total_real_synced_count = sum(1 for j in st.session_state.daily_jobs if not (j.get("job_id") or "").startswith("OPP-") and j.get("job_id") != "NO-ROLE-FOUND")
         scope_pill_html = f"""
         <div style="background: #202534; border: 1px solid #2D3345; border-radius: 4px; padding: 8px 14px; margin: 12px 0 16px 0; display: flex; align-items: center; justify-content: space-between;">
             <div style="display: flex; align-items: center; gap: 8px; font-size: 12.5px;">
-                <span>Target Evaluation: <b style="color: #8AB4F8;">{eval_count} Companies</b> ({selected_grp} Sector | {selected_chan}) against verified YAML profile.</span>
+                <span>Target Evaluation: <b style="color: #8AB4F8;">{eval_count} Companies</b> (<b style="color: #81C995;">{total_real_synced_count:,} Live Synced Positions</b> | {selected_grp} Sector | {selected_chan}) against verified YAML profile.</span>
             </div>
             <span style="font-size: 11.5px; color: #9AA0A6;">Cross-platform search enabled across Career Pages, LinkedIn & Naukri.</span>
         </div>
@@ -2177,13 +2355,6 @@ def render_main_dashboard():
                         st.error(f"Analysis error: {r.text}")
                 except Exception as e:
                     st.error(f"API Error: {e}")
-
-        # Scope Search & Row Limit Selector (Default to 'All' - Zero artificial caps)
-        s_c1, s_c2 = st.columns([3, 1])
-        with s_c1:
-            emp_query = st.text_input("Filter Scope Employers by Name...", "", placeholder="Type company name e.g. Larsen & Toubro, Google, NVIDIA, Infosys, Accenture...")
-        with s_c2:
-            display_limit_sel = st.selectbox("Show Rows", ["All", 25, 50, 100, 250, 500], index=0)
 
         # Smart fuzzy and alias search
         def match_company_query(query: str, target: str) -> bool:
@@ -2213,14 +2384,58 @@ def render_main_dashboard():
                 return True
             return False
 
-        filtered_pool = [c for c in target_pool if match_company_query(emp_query, c)] if emp_query else target_pool
+        # Precompute set of employers with real synced positions
+        synced_comp_names = set(
+            j.get("company_name") for j in st.session_state.daily_jobs
+            if not (j.get("job_id") or "").startswith("OPP-") and j.get("job_id") != "NO-ROLE-FOUND"
+        )
+
+        # In-Column Filters for Scope Employers Table (Zero standalone filters above the table)
+        ac_c1, ac_c2, ac_c3, ac_c4, ac_c5, ac_c6 = st.columns([0.4, 2.8, 1.4, 1.8, 1.8, 1.4])
+        with ac_c1:
+            st.markdown("<div style='height: 38px;'></div>", unsafe_allow_html=True)
+        with ac_c2:
+            f_ac_comp = st.text_input("Filter Company", "", placeholder="Filter Company...", label_visibility="collapsed", key="ac_f_comp")
+        with ac_c3:
+            f_ac_sec = st.selectbox("Filter Sector", ["All", "MNC", "AI_Startup", "Remote_First"], index=0, label_visibility="collapsed", key="ac_f_sec")
+        with ac_c4:
+            f_ac_chan = st.selectbox("Filter Channel", ["All", "Career Page", "LinkedIn", "Naukri"], index=0, label_visibility="collapsed", key="ac_f_chan")
+        with ac_c5:
+            f_ac_open = st.selectbox("Filter Openings", ["All", "Live Synced Roles", "Directory Monitored"], index=0, label_visibility="collapsed", key="ac_f_open")
+        with ac_c6:
+            display_limit_sel = st.selectbox("Show Rows", ["All", 25, 50, 100, 250, 500], index=0, label_visibility="collapsed", key="ac_f_limit")
+
+        # Apply Column Filters simultaneously
+        filtered_pool = target_pool
+        if f_ac_comp.strip():
+            filtered_pool = [c for c in filtered_pool if match_company_query(f_ac_comp, c)]
+
+        if f_ac_sec != "All":
+            filtered_pool = [
+                c for c in filtered_pool
+                if any(j.get("company_group") == f_ac_sec for j in st.session_state.daily_jobs if j.get("company_name") == c)
+            ]
+
+        if f_ac_chan != "All":
+            filtered_pool = [
+                c for c in filtered_pool
+                if any(
+                    (j.get("source_channel") or CompanyService.get_channel_from_url(j.get("url", ""))) == f_ac_chan
+                    for j in st.session_state.daily_jobs if j.get("company_name") == c
+                )
+            ]
+
+        if f_ac_open == "Live Synced Roles":
+            filtered_pool = [c for c in filtered_pool if c in synced_comp_names]
+        elif f_ac_open == "Directory Monitored":
+            filtered_pool = [c for c in filtered_pool if c not in synced_comp_names]
 
         # Dynamic On-Demand Company Ingestion if not found
-        if emp_query and not filtered_pool:
-            st.info(f"No pre-configured company directly matches '{emp_query}'. You can add and monitor it right now without limits.")
+        if f_ac_comp and not filtered_pool:
+            st.info(f"No pre-configured company directly matches '{f_ac_comp}'. You can add and monitor it right now without limits.")
             add_c1, add_c2 = st.columns([3, 1])
             with add_c1:
-                custom_comp_name = st.text_input("Company Name to Monitor", value=emp_query.title(), key="new_custom_company_input")
+                custom_comp_name = st.text_input("Company Name to Monitor", value=f_ac_comp.title(), key="new_custom_company_input")
             with add_c2:
                 st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
                 if st.button("Add & Monitor", type="primary", use_container_width=True):
@@ -2261,48 +2476,61 @@ def render_main_dashboard():
                             except Exception as e:
                                 st.error(f"Error: {e}")
 
-        limit_count = len(filtered_pool) if display_limit_sel == "All" else int(display_limit_sel)
-        viewing_pool = filtered_pool[:limit_count]
+        # Sort companies: employers with newly synced live positions appear FIRST!
+        sorted_pool = sorted(
+            filtered_pool,
+            key=lambda c: (0 if c in synced_comp_names else 1, c.lower())
+        )
+        limit_count = len(sorted_pool) if display_limit_sel == "All" else int(display_limit_sel)
+        viewing_pool = sorted_pool[:limit_count]
 
         # Render preview table of target companies
         preview_rows = []
         for c_name in viewing_pool:
             matched_jobs = [j for j in st.session_state.daily_jobs if j.get("company_name") == c_name]
-            job_cnt = len(matched_jobs)
+            real_jobs = [j for j in matched_jobs if not (j.get("job_id") or "").startswith("OPP-") and j.get("job_id") != "NO-ROLE-FOUND"]
+            has_real_job = len(real_jobs) > 0
+            job_cnt = len(real_jobs) if has_real_job else len(matched_jobs)
             grp = matched_jobs[0].get("company_group", "Enterprise") if matched_jobs else "Enterprise"
             career_url = resolve_career_url(matched_jobs[0] if matched_jobs else None, c_name)
-            has_real_job = job_cnt > 0 and matched_jobs and matched_jobs[0].get("job_id") != "NO-ROLE-FOUND"
 
             # Compute channel badges for available roles
             channels_present = set()
-            for mj in matched_jobs:
-                if mj.get("job_id") != "NO-ROLE-FOUND":
-                    ch = mj.get("source_channel") or CompanyService.get_channel_from_url(mj.get("url", ""))
-                    channels_present.add(ch)
+            for mj in (real_jobs if has_real_job else matched_jobs):
+                ch = mj.get("source_channel") or CompanyService.get_channel_from_url(mj.get("url", ""))
+                channels_present.add(ch)
             if not channels_present:
                 channel_pills = '<span class="status-pill-gray">Careers Portal</span>'
             else:
                 channel_pills = " ".join([get_source_pill_html(c) for c in sorted(list(channels_present))])
 
             if has_real_job:
-                # Direct links for up to 2 requisitions
+                # Direct links for up to 3 live requisitions
                 badges = []
-                for j in matched_jobs[:2]:
+                for j in real_jobs[:3]:
                     jid = j.get("job_id", "REQ")
                     jurl = j.get("url") or career_url
+                    jurl_low = jurl.lower()
+                    if "arbeitnow.com" in jurl_low or "jobicy.com" in jurl_low:
+                        jurl = career_url
+                    elif "naukri.com" in jurl_low and ("job-listings-" in jurl_low or "expjd=true" in jurl_low):
+                        jurl = CompanyService.get_official_naukri_url(c_name, j.get("title", ""))
                     ch = j.get("source_channel") or CompanyService.get_channel_from_url(jurl)
-                    badges.append(f'<a href="{jurl}" target="_blank" class="job-id-pill" title="{ch} Requisition #{jid}">#{jid} ↗</a>')
+                    jtitle = (j.get("title") or "").replace('"', '&quot;')
+                    badges.append(f'<a href="{jurl}" target="_blank" class="job-id-pill" title="{ch}: {jtitle} (#{jid})">#{jid} ↗</a>')
                 id_badge = " ".join(badges)
+                openings_cell = f'<b style="color: #81C995;">{len(real_jobs)} live positions</b>'
             else:
-                id_badge = f'<a href="{career_url}" target="_blank" class="job-id-pill" title="Official Careers Portal">0 Active Roles ↗</a>'
+                id_badge = f'<a href="{career_url}" target="_blank" class="job-id-pill" title="Official Careers Portal">Career Portal ↗</a>'
+                openings_cell = '<span style="color: #9AA0A6;">Directory Monitored</span>'
 
             preview_rows.append(f"""
             <tr>
                 <td style="width: 30px;"><input type="checkbox" checked disabled></td>
-                <td><b style="color: #8AB4F8;">{c_name}</b></td>
+                <td><b style="color: #8AB4F8;">{c_name}</b>{" <span class='chip-green' style='font-size: 10px; padding: 1px 5px;'>Live Synced</span>" if has_real_job else ""}</td>
                 <td><span class="status-pill-gray">{grp}</span></td>
                 <td>{channel_pills}</td>
-                <td>{job_cnt if has_real_job else 0} active requisitions</td>
+                <td>{openings_cell}</td>
                 <td>{id_badge}</td>
             </tr>
             """)
@@ -2311,10 +2539,10 @@ def render_main_dashboard():
         <div class="console-table-container">
             <div class="console-table-header">
                 <div class="console-table-title">
-                    <span>Scope Employers ({len(filtered_pool)} Matching)</span>
+                    <span>Scope Employers ({len(filtered_pool)} Matching — {len(synced_comp_names)} with Live Synced Roles)</span>
                 </div>
                 <div style="font-size: 11.5px; color: #9AA0A6;">
-                    Showing {len(viewing_pool)} of {len(filtered_pool)} companies in scope across Career Pages, LinkedIn & Naukri
+                    Showing {len(viewing_pool)} of {len(filtered_pool)} companies (employers with live synced requisitions displayed first)
                 </div>
             </div>
             <table class="console-table">
@@ -2375,37 +2603,20 @@ def render_main_dashboard():
                     except Exception as e:
                         st.error(f"Error: {e}")
         else:
-            # Action Toolbar with Sector & Channel Filters
-            act_c1, act_c2, act_c3, act_c4 = st.columns([2.2, 1, 1, 1])
-            with act_c1:
-                res_search = st.text_input(
-                    "Filter Results by Role, Employer, Job ID, or Tech Stack...",
-                    "",
-                    placeholder="Search by Job ID, Role, Company e.g. Infosys, Canonical, Accenture...",
-                    label_visibility="collapsed"
-                )
-            with act_c2:
-                res_grp_filter = st.selectbox(
-                    "Market Sector Filter",
-                    ["All", "MNC", "AI_Startup", "Remote_First"],
-                    index=0,
-                    label_visibility="collapsed"
-                )
-            with act_c3:
-                res_chan_filter = st.selectbox(
-                    "Source Channel Filter",
-                    ["All Channels", "Career Page", "LinkedIn", "Naukri"],
-                    index=0,
-                    label_visibility="collapsed"
-                )
-            with act_c4:
+            # Action Toolbar with Re-evaluate Profile Action
+            hdr_c1, hdr_c2 = st.columns([4, 1.2])
+            with hdr_c1:
+                st.markdown("""
+                <div style="font-size: 13.5px; font-weight: 600; color: #E8EAED;">Evaluated Tech Requisitions against Verified Profile</div>
+                <div style="font-size: 11.5px; color: #9AA0A6; margin-top: 1px;">
+                    Multi-channel candidate matching across Career Pages, LinkedIn, and Naukri.
+                </div>
+                """, unsafe_allow_html=True)
+            with hdr_c2:
                 if st.button("Re-evaluate Profile", use_container_width=True, type="primary"):
                     with st.spinner("Re-evaluating employers across Career Pages, LinkedIn & Naukri..."):
                         try:
-                            payload = {
-                                "selected_group": res_grp_filter,
-                                "selected_channel": res_chan_filter if res_chan_filter != "All Channels" else "All"
-                            }
+                            payload = {"selected_group": "All"}
                             r = requests.post(f"{API_BASE}/api/analyze", json=payload, headers=get_auth_headers(), timeout=35)
                             if r.status_code == 200:
                                 st.session_state.analysis_results = r.json()
@@ -2572,23 +2783,54 @@ def render_main_dashboard():
                 except Exception as pdf_err:
                     st.error(f"Error compiling PDF: {pdf_err}")
 
+            # In-Column Filters for Results Tables (Zero bulky standalone filters above table)
+            rf_c1, rf_c2, rf_c3, rf_c4, rf_c5, rf_c6, rf_c7 = st.columns([1.8, 2.2, 1.2, 1.2, 1.1, 1.6, 1.0])
+            with rf_c1:
+                res_f_comp = st.text_input("Filter Company", "", placeholder="Filter Company...", label_visibility="collapsed", key="rf_comp")
+            with rf_c2:
+                res_f_title = st.text_input("Filter Title", "", placeholder="Filter Role Title...", label_visibility="collapsed", key="rf_title")
+            with rf_c3:
+                res_f_chan = st.selectbox("Filter Channel", ["All", "Career Page", "LinkedIn", "Naukri"], index=0, label_visibility="collapsed", key="rf_chan")
+            with rf_c4:
+                res_f_sec = st.selectbox("Filter Sector", ["All", "MNC", "AI_Startup", "Remote_First"], index=0, label_visibility="collapsed", key="rf_sec")
+            with rf_c5:
+                res_f_mode = st.selectbox("Filter Work Mode", ["All", "Hybrid", "Remote", "On-site"], index=0, label_visibility="collapsed", key="rf_mode")
+            with rf_c6:
+                res_f_skill = st.text_input("Filter Skill/ID", "", placeholder="Filter Skills or ID...", label_visibility="collapsed", key="rf_skill")
+            with rf_c7:
+                if st.button("Reset", use_container_width=True, key="rf_reset"):
+                    st.session_state["rf_comp"] = ""
+                    st.session_state["rf_title"] = ""
+                    st.session_state["rf_chan"] = "All"
+                    st.session_state["rf_sec"] = "All"
+                    st.session_state["rf_mode"] = "All"
+                    st.session_state["rf_skill"] = ""
+                    st.rerun()
+
             def filter_result_items(items):
                 if not items:
                     return []
                 out = items
-                if res_grp_filter != "All":
-                    out = [i for i in out if i.get("company_group") == res_grp_filter]
-                if res_chan_filter != "All Channels":
-                    out = [i for i in out if (i.get("source_channel") or CompanyService.get_channel_from_url(i.get("job_apply_url", ""))) == res_chan_filter]
-                if res_search:
-                    q = res_search.lower()
+                if res_f_comp.strip():
+                    q_c = res_f_comp.strip().lower()
+                    out = [i for i in out if q_c in (i.get("company_name") or "").lower()]
+                if res_f_title.strip():
+                    q_t = res_f_title.strip().lower()
+                    out = [i for i in out if q_t in (i.get("title") or "").lower()]
+                if res_f_chan != "All":
+                    out = [i for i in out if (i.get("source_channel") or CompanyService.get_channel_from_url(i.get("job_apply_url", ""))) == res_f_chan]
+                if res_f_sec != "All":
+                    out = [i for i in out if i.get("company_group") == res_f_sec]
+                if res_f_mode != "All":
+                    out = [i for i in out if res_f_mode.lower() in (i.get("work_mode") or "").lower()]
+                if res_f_skill.strip():
+                    q_s = res_f_skill.strip().lower()
                     out = [
                         i for i in out if (
-                            q in i.get("title", "").lower() or
-                            q in i.get("company_name", "").lower() or
-                            q in i.get("job_id", "").lower() or
-                            any(q in s.lower() for s in i.get("matched_skills", [])) or
-                            any(q in s.lower() for s in i.get("lag_skills", []))
+                            any(q_s in s.lower() for s in (i.get("matched_skills") or [])) or
+                            any(q_s in s.lower() for s in (i.get("lag_skills") or [])) or
+                            any(q_s in s.lower() for s in (i.get("skills_required") or [])) or
+                            q_s in (i.get("job_id") or "").lower()
                         )
                     ]
                 return out
@@ -2993,6 +3235,396 @@ def render_main_dashboard():
         """
         render_html(full_monitored_table)
 
+    # -------------------------------------------------------------------------
+    # TAB 6: JOB SYNC ENGINE (Admin Only: boobesh2509@gmail.com)
+    # -------------------------------------------------------------------------
+    elif "Job Sync Engine" in selected_menu:
+        render_job_sync_engine_tab(user_email)
+
+# -----------------------------------------------------------------------------
+# Component: Admin Job Sync Engine Module
+# -----------------------------------------------------------------------------
+def render_job_sync_engine_tab(user_email: str):
+    """
+    Dedicated Job Sync Engine Console for System Administrator.
+    Provides live progress monitoring, mutual exclusion state, manual trigger,
+    and ingestion rule matrix.
+    """
+    if (user_email or "").strip().lower() != "boobesh2509@gmail.com":
+        st.error("Access Restricted: This administration module is exclusively available to boobesh2509@gmail.com.")
+        return
+
+    st.markdown("""
+    <div style="margin-bottom: 16px;">
+        <div style="font-size: 16px; font-weight: 600; color: #E8EAED;">Autonomous Job Sync Engine & Real-Time Orchestration</div>
+        <div style="font-size: 12px; color: #9AA0A6; margin-top: 2px;">
+            Multi-channel ingestion across official ATS career pages, LinkedIn (30-day window), Naukri, and remote networks. Enforces mutual-exclusion locking against concurrent executions.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Query current sync status
+    try:
+        r_stat = requests.get(f"{API_BASE}/api/jobs/sync/status", headers=get_auth_headers(), timeout=5)
+        if r_stat.status_code == 200:
+            sync_data = r_stat.json()
+        else:
+            sync_data = {"status": "UNKNOWN", "stage": f"Error loading status ({r_stat.status_code})"}
+    except Exception as ex:
+        sync_data = {"status": "UNKNOWN", "stage": f"Connection error: {ex}"}
+
+    cur_status = sync_data.get("status", "IDLE")
+    cur_stage = sync_data.get("stage", "System Ready")
+    progress_pct = sync_data.get("progress_pct", 0)
+    total_ingested = sync_data.get("total_ingested", 0)
+    new_jobs_added = sync_data.get("new_jobs_added", 0)
+    pruned_jobs = sync_data.get("pruned_jobs", 0)
+    triggered_by = sync_data.get("triggered_by") or "System"
+    started_at = sync_data.get("started_at") or "N/A"
+    completed_at = sync_data.get("completed_at") or "N/A"
+    elapsed_seconds = sync_data.get("elapsed_seconds", 0)
+    active_jobs_in_db = sync_data.get("active_jobs_in_db", 0)
+    error_message = sync_data.get("error_message")
+
+    # -------------------------------------------------------------------------
+    # STATE 1: RUNNING (Live Progress Bar & Auto-polling)
+    # -------------------------------------------------------------------------
+    if cur_status == "RUNNING":
+        st.markdown(f"""
+        <div style="background: rgba(26, 115, 232, 0.12); border: 1px solid #1A73E8; border-radius: 6px; padding: 14px 18px; margin-bottom: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="font-size: 13.5px; font-weight: 600; color: #8AB4F8; text-transform: uppercase; letter-spacing: 0.04em;">Job Sync In Progress</span>
+                <span style="font-size: 12px; background: #1A73E8; color: #FFFFFF; padding: 2px 8px; border-radius: 4px; font-weight: 500;">RUNNING</span>
+            </div>
+            <div style="font-size: 13px; color: #FFFFFF; font-weight: 500; margin-bottom: 4px;">{cur_stage}</div>
+            <div style="font-size: 11.5px; color: #9AA0A6;">
+                Triggered By: <b style="color: #E8EAED;">{triggered_by}</b> &nbsp;|&nbsp; Elapsed: <b style="color: #E8EAED;">{elapsed_seconds}s</b> &nbsp;|&nbsp; Ingested in this run: <b style="color: #81C995;">{total_ingested}</b>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.progress(progress_pct / 100.0, text=f"Sync Progress: {progress_pct}% — {cur_stage}")
+
+        st.markdown("""
+        <div style="background: rgba(242, 139, 130, 0.08); border: 1px solid rgba(242, 139, 130, 0.3); border-radius: 6px; padding: 10px 14px; margin-top: 14px; font-size: 12px; color: #F28B82;">
+            <b>Execution Locked:</b> A background job sync is currently executing. Double execution is prohibited via mutual exclusion. This page will automatically update as tasks complete.
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Auto-refresh interval while sync is running
+        time.sleep(2)
+        st.rerun()
+
+    # -------------------------------------------------------------------------
+    # STATE 2: IDLE, COMPLETED, or FAILED
+    # -------------------------------------------------------------------------
+    else:
+        # Status header badge
+        badge_color = "#81C995" if cur_status == "COMPLETED" else ("#F28B82" if cur_status == "FAILED" else "#8AB4F8")
+        st.markdown(f"""
+        <div style="background: #182030; border: 1px solid #283754; border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #9AA0A6; font-weight: 600;">Engine Status</span>
+                <div style="font-size: 14px; font-weight: 600; color: {badge_color}; margin-top: 2px;">{cur_status}: {cur_stage}</div>
+            </div>
+            <div style="font-size: 11.5px; color: #9AA0A6; text-align: right;">
+                Last Source: <b style="color: #FFFFFF;">{triggered_by}</b><br>
+                Completed: <b style="color: #FFFFFF;">{completed_at}</b>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if error_message:
+            st.error(f"Previous Sync Error: {error_message}")
+
+        # Metrics Row
+        m_col1, m_col2, m_col3, m_col4 = st.columns(4)
+        with m_col1:
+            st.metric("Active Tech Roles in DB", f"{active_jobs_in_db:,}")
+        with m_col2:
+            st.metric("Total Ingested (Last Run)", f"{total_ingested:,}", f"+{new_jobs_added} new" if new_jobs_added else None)
+        with m_col3:
+            st.metric("Pruned Expired (>30d)", f"{pruned_jobs:,}")
+        with m_col4:
+            st.metric("Sync Duration", f"{elapsed_seconds}s")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Trigger Action Card
+        st.markdown("""
+        <div style="background: #1B2232; border: 1px solid #28354E; border-radius: 6px; padding: 14px 18px; margin-bottom: 16px;">
+            <div style="font-size: 13.5px; font-weight: 600; color: #E8EAED;">Manual Ingestion Dispatcher</div>
+            <div style="font-size: 12px; color: #9AA0A6; margin-top: 2px; margin-bottom: 12px;">
+                Triggers an asynchronous job sync cycle across all configured channels. Automatically locks execution to prevent concurrent conflicts.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if st.button("Trigger Job Ingestion Now", type="primary", use_container_width=False):
+            with st.spinner("Submitting background sync request to engine..."):
+                try:
+                    r_trig = requests.post(f"{API_BASE}/api/jobs/sync", headers=get_auth_headers(), timeout=10)
+                    if r_trig.status_code == 202:
+                        st.success("Job sync initiated successfully in background!")
+                        time.sleep(1)
+                        st.rerun()
+                    elif r_trig.status_code == 409:
+                        st.warning("A job sync is already active. Please wait for completion.")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error(f"Failed to initiate sync ({r_trig.status_code}): {r_trig.text}")
+                except Exception as ex:
+                    st.error(f"Request failed: {ex}")
+
+    # -------------------------------------------------------------------------
+    # Ingestion Rules & Data Freshness Matrix
+    # -------------------------------------------------------------------------
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style="background: #182030; border: 1px solid #283754; border-radius: 6px; padding: 14px 18px;">
+        <div style="font-size: 13.5px; font-weight: 600; color: #8AB4F8; margin-bottom: 8px;">Configured Ingestion Rules & Data Matrix</div>
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px; color: #BDC1C6;">
+            <thead>
+                <tr style="border-bottom: 1px solid #283754; text-align: left; color: #9AA0A6;">
+                    <th style="padding: 6px 8px;">Channel</th>
+                    <th style="padding: 6px 8px;">Freshness / Retention Rule</th>
+                    <th style="padding: 6px 8px;">Role Scope</th>
+                    <th style="padding: 6px 8px;">Geographic Constraint</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr style="border-bottom: 1px solid #222B3D;">
+                    <td style="padding: 8px; font-weight: 500; color: #FFFFFF;">Official Career ATS (Greenhouse, Lever, etc.)</td>
+                    <td style="padding: 8px; color: #81C995;">NO 30-day cutoff. 100% taken as long as listed open on ATS.</td>
+                    <td style="padding: 8px;">Technical engineering roles only.</td>
+                    <td style="padding: 8px;">India (Any mode) OR Abroad (Remote only).</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #222B3D;">
+                    <td style="padding: 8px; font-weight: 500; color: #FFFFFF;">LinkedIn Jobs (Guest API)</td>
+                    <td style="padding: 8px; color: #FDD663;">Filtered to past 30 days (f_TPR=r2592000). Expired pruned.</td>
+                    <td style="padding: 8px;">AI Developer, FDE, GenAI, Cloud, Systems, FinTech Tech.</td>
+                    <td style="padding: 8px;">India (Any mode) OR Abroad (Remote only).</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #222B3D;">
+                    <td style="padding: 8px; font-weight: 500; color: #FFFFFF;">Naukri IT Portals</td>
+                    <td style="padding: 8px; color: #FDD663;">Filtered to past 30 days. Older pruned.</td>
+                    <td style="padding: 8px;">Cloud, DevOps, GenAI, Quant, Systems Tech.</td>
+                    <td style="padding: 8px;">India (Bengaluru, Hyderabad, Pune, Chennai, etc.).</td>
+                </tr>
+                <tr>
+                    <td style="padding: 8px; font-weight: 500; color: #FFFFFF;">Global Remote APIs (Arbeitnow, Remotive, Jobicy)</td>
+                    <td style="padding: 8px; color: #FDD663;">Fresh active feeds only.</td>
+                    <td style="padding: 8px;">Full Stack, Backend, Systems, DevOps, AI.</td>
+                    <td style="padding: 8px;">Global Remote / Worldwide only.</td>
+                </tr>
+            </tbody>
+        </table>
+        <div style="margin-top: 10px; font-size: 11px; color: #9AA0A6;">
+            Stored Fields: Company Name, Job Title, Experience (Min/Max Years), Posting Date, Full Description (JD), Verified Apply URL.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # -------------------------------------------------------------------------
+    # Explorer: Newly Synced Positions in Database
+    # -------------------------------------------------------------------------
+    st.markdown("<br>", unsafe_allow_html=True)
+    real_synced = [
+        j for j in st.session_state.daily_jobs
+        if not (j.get("job_id") or "").startswith("OPP-") and j.get("job_id") != "NO-ROLE-FOUND"
+    ]
+
+    st.markdown(f"""
+    <div style="background: #1B2232; border: 1px solid #28354E; border-radius: 6px; padding: 14px 18px; margin-bottom: 12px;">
+        <div style="font-size: 14px; font-weight: 600; color: #E8EAED;">Newly Synced Tech Positions Explorer ({len(real_synced):,} Active Requisitions)</div>
+        <div style="font-size: 12px; color: #9AA0A6; margin-top: 2px;">
+            Authentic live openings ingested across official ATS portals, LinkedIn (past 30 days), Naukri, and remote networks.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if real_synced:
+        # Per-Column Filters (Zero filters above table - every column has its own filter)
+        f_c1, f_c2, f_c3, f_c4, f_c5, f_c6, f_c7 = st.columns([1.7, 2.3, 1.2, 1.1, 1.0, 1.5, 0.9])
+        with f_c1:
+            f_sp_comp = st.text_input("Filter Company", "", placeholder="Filter Company...", label_visibility="collapsed", key="sp_f_comp")
+        with f_c2:
+            f_sp_title = st.text_input("Filter Title", "", placeholder="Filter Job Title...", label_visibility="collapsed", key="sp_f_title")
+        with f_c3:
+            f_sp_chan = st.selectbox("Filter Channel", ["All", "Career Page", "LinkedIn", "Naukri"], index=0, label_visibility="collapsed", key="sp_f_chan")
+        with f_c4:
+            f_sp_exp = st.selectbox("Filter Experience", ["All", "0 - 2 Yrs", "2 - 5 Yrs", "5+ Yrs"], index=0, label_visibility="collapsed", key="sp_f_exp")
+        with f_c5:
+            f_sp_mode = st.selectbox("Filter Work Mode", ["All", "Remote", "Hybrid", "On-site"], index=0, label_visibility="collapsed", key="sp_f_mode")
+        with f_c6:
+            f_sp_loc = st.text_input("Filter Location", "", placeholder="Filter Location...", label_visibility="collapsed", key="sp_f_loc")
+        with f_c7:
+            f_sp_limit = st.selectbox("Show Rows", [50, 100, 250, "All"], index=0, label_visibility="collapsed", key="sp_f_limit")
+
+        # Multi-filter execution across all columns simultaneously
+        filtered_pos = real_synced
+        if f_sp_comp.strip():
+            q_c = f_sp_comp.strip().lower()
+            filtered_pos = [j for j in filtered_pos if q_c in (j.get("company_name") or "").lower()]
+        if f_sp_title.strip():
+            q_t = f_sp_title.strip().lower()
+            filtered_pos = [j for j in filtered_pos if q_t in (j.get("title") or "").lower()]
+        if f_sp_chan != "All":
+            filtered_pos = [j for j in filtered_pos if (j.get("source_channel") or "").lower() == f_sp_chan.lower()]
+        if f_sp_exp != "All":
+            if "0 - 2" in f_sp_exp:
+                filtered_pos = [j for j in filtered_pos if (j.get("min_exp") or 0) <= 2]
+            elif "2 - 5" in f_sp_exp:
+                filtered_pos = [j for j in filtered_pos if ((j.get("min_exp") or 0) >= 1.5 and (j.get("max_exp") or 5) <= 6) or any(k in (j.get("experience_text") or "") for k in ["2", "3", "4", "5"])]
+            elif "5+" in f_sp_exp:
+                filtered_pos = [j for j in filtered_pos if (j.get("min_exp") or 0) >= 5 or (j.get("max_exp") or 0) >= 5]
+        if f_sp_mode != "All":
+            filtered_pos = [j for j in filtered_pos if (j.get("work_mode") or "").lower() == f_sp_mode.lower()]
+        if f_sp_loc.strip():
+            q_l = f_sp_loc.strip().lower()
+            filtered_pos = [j for j in filtered_pos if q_l in (j.get("location") or "").lower()]
+
+        pos_display_count = len(filtered_pos) if f_sp_limit == "All" else int(f_sp_limit)
+        pos_display = filtered_pos[:pos_display_count]
+
+        active_filters = sum([
+            1 if f_sp_comp.strip() else 0,
+            1 if f_sp_title.strip() else 0,
+            1 if f_sp_chan != "All" else 0,
+            1 if f_sp_exp != "All" else 0,
+            1 if f_sp_mode != "All" else 0,
+            1 if f_sp_loc.strip() else 0
+        ])
+        filter_badge = f" — {active_filters} Column Filters Active" if active_filters > 0 else ""
+
+        pos_rows = []
+        sync_modals = []
+        import html, re
+        for j in pos_display:
+            cname = j.get("company_name", "Tech Employer")
+            title = j.get("title", "Engineering Role")
+            chan = j.get("source_channel", "Career Page")
+            loc = j.get("location", "Remote")
+            wmode = j.get("work_mode", "Remote")
+            exp = j.get("experience_text", "2 - 5 Years")
+            url = j.get("url") or j.get("job_apply_url") or "#"
+            url_low = url.lower()
+            if "arbeitnow.com" in url_low or "jobicy.com" in url_low:
+                url = CompanyService.get_official_career_url(cname)
+            elif "naukri.com" in url_low and ("job-listings-" in url_low or "expjd=true" in url_low):
+                url = CompanyService.get_official_naukri_url(cname, title)
+            jid = j.get("job_id", "REQ")
+            chan_pill = get_source_pill_html(chan)
+            clean_jid = re.sub(r'[^a-zA-Z0-9_-]', '_', str(jid))
+
+            from core.jd_formatter import JobDescriptionFormatter
+            full_jd_text = JobDescriptionFormatter.get_full_job_description({
+                "company_name": cname,
+                "title": title,
+                "location": loc,
+                "work_mode": wmode,
+                "experience_text": exp,
+                "source_channel": chan,
+                "job_id": jid,
+                "skills_required": j.get("skills_required") or [],
+                "raw_description": j.get("raw_description") or j.get("raw_markdown") or ""
+            })
+            safe_jd = html.escape(full_jd_text)
+
+            pos_rows.append(f"""
+            <tr>
+                <td><b style="color: #8AB4F8;">{cname}</b></td>
+                <td>
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+                        <span style="color: #FFFFFF; font-weight: 500;">{title}</span>
+                        <a href="#sync_modal_{clean_jid}" class="role-info-icon" title="View Full Role Details & Job Description (JD)">ⓘ</a>
+                    </div>
+                </td>
+                <td>{chan_pill}</td>
+                <td><span class="status-pill-gray">{exp}</span></td>
+                <td>{wmode}</td>
+                <td style="color: #9AA0A6; font-size: 11.5px;">{loc}</td>
+                <td><a href="{url}" target="_blank" class="job-id-pill" title="Apply via {chan} (#{jid})">#{jid} ↗</a></td>
+            </tr>
+            """)
+
+            sync_modals.append(f"""
+            <div id="sync_modal_{clean_jid}" class="jd-modal-overlay">
+                <a href="#close" class="jd-modal-backdrop"></a>
+                <div class="jd-modal-box">
+                    <div class="jd-modal-header">
+                        <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;">
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                    <span style="font-size: 18px; font-weight: 700; color: #FFFFFF;">{cname}</span>
+                                    <span class="status-pill-gray">{j.get("company_group", "Tech_Enterprise")}</span>
+                                    {chan_pill}
+                                    <span class="chip-green">Live Synced Role</span>
+                                </div>
+                                <h2 style="margin: 8px 0 0 0; font-size: 20px; font-weight: 600; color: #8AB4F8;">{title}</h2>
+                            </div>
+                            <a href="#close" class="jd-modal-close" title="Close Specification">✕</a>
+                        </div>
+                    </div>
+
+                    <div class="jd-meta-grid">
+                        <div class="jd-meta-item"><span class="jd-meta-label">Location</span><span class="jd-meta-value">{loc}</span></div>
+                        <div class="jd-meta-item"><span class="jd-meta-label">Work Mode</span><span class="jd-meta-value">{wmode}</span></div>
+                        <div class="jd-meta-item"><span class="jd-meta-label">Experience Bracket</span><span class="jd-meta-value">{exp}</span></div>
+                        <div class="jd-meta-item"><span class="jd-meta-label">Requisition ID</span><span class="jd-meta-value">#{jid}</span></div>
+                        <div class="jd-meta-item"><span class="jd-meta-label">Source Channel</span><span class="jd-meta-value">{chan}</span></div>
+                        <div class="jd-meta-item"><span class="jd-meta-label">Status</span><span class="jd-meta-value" style="color: #81C995;">Verified Open Requisition</span></div>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <a href="{url}" target="_blank" class="btn-direct-apply" style="padding: 6px 14px; font-size: 12px;">Apply on Official Portal ↗</a>
+                        <a href="?nav=Deep+Analysis+%26+Tailoring&job_id={jid}" target="_self" class="btn-deep-tailor" style="padding: 6px 14px; font-size: 12px;">Deep Analyse & Tailor CV ↗</a>
+                        <a href="#close" style="background: rgba(255,255,255,0.06); color: #9AA0A6; border: 1px solid #374151; border-radius: 4px; padding: 6px 14px; font-size: 12px; text-decoration: none; margin-left: auto;">Close Window</a>
+                    </div>
+
+                    <div class="jd-content-section">
+                        <div style="font-size: 12px; font-weight: 600; color: #9AA0A6; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;">Complete Job Description (JD)</div>
+                        <div class="jd-raw-text">{safe_jd}</div>
+                    </div>
+                </div>
+            </div>
+            """)
+
+        full_synced_table = f"""
+        <div class="console-table-container">
+            <div class="console-table-header">
+                <div class="console-table-title">
+                    <span>Live Synced Positions ({len(filtered_pos)} Matching{filter_badge})</span>
+                </div>
+                <div style="font-size: 11.5px; color: #9AA0A6;">
+                    Showing {len(pos_display)} of {len(filtered_pos)} positions in scope
+                </div>
+            </div>
+            <table class="console-table">
+                <thead>
+                    <tr>
+                        <th>Company</th>
+                        <th>Job Title</th>
+                        <th>Channel</th>
+                        <th>Experience</th>
+                        <th>Work Mode</th>
+                        <th>Location</th>
+                        <th>Apply Link</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {''.join(pos_rows)}
+                </tbody>
+            </table>
+            {''.join(sync_modals)}
+        </div>
+        """
+        render_html(full_synced_table)
+    else:
+        st.info("No newly synced positions found in active memory. Click 'Trigger Job Ingestion Now' above to run a sync cycle.")
+
+
 # -----------------------------------------------------------------------------
 # Component: Dense Match Data Table
 # -----------------------------------------------------------------------------
@@ -3019,6 +3651,8 @@ def render_console_matches_table(title: str, subtitle: str, items: List[Dict[str
         return
 
     table_rows = []
+    modals_html = []
+    import html, re
     for item in items:
         matched = item.get("matched_skills", [])
         lag = item.get("lag_skills", [])
@@ -3037,15 +3671,30 @@ def render_console_matches_table(title: str, subtitle: str, items: List[Dict[str
         loc = item.get("location", "Global")
         exp_asked = item.get("experience_asked", "N/A")
         work_mode = item.get("work_mode", "Remote")
+        clean_jid = re.sub(r'[^a-zA-Z0-9_-]', '_', str(job_id))
 
         import urllib.parse
-        career_url = item.get("career_portal_url") or item.get("job_apply_url") or CompanyService.get_official_career_url(comp_name)
+        career_url = resolve_career_url(item, comp_name)
         google_jobs_hub = f"https://www.google.com/search?q={urllib.parse.quote(comp_name + ' jobs openings')}&ibp=htl;jobs"
         li_url = item.get("linkedin_jobs_url") or CompanyService.get_official_linkedin_url(comp_name, role_title)
         nk_url = item.get("naukri_jobs_url") or CompanyService.get_official_naukri_url(comp_name, role_title)
 
         # Dynamic score color
         score_color = "#81C995" if score_val >= 75 else ("#FDD663" if score_val >= 60 else "#F28B82")
+
+        from core.jd_formatter import JobDescriptionFormatter
+        full_jd_text = JobDescriptionFormatter.get_full_job_description({
+            "company_name": comp_name,
+            "title": role_title,
+            "location": loc,
+            "work_mode": work_mode,
+            "experience_text": exp_asked,
+            "source_channel": source_channel,
+            "job_id": job_id,
+            "skills_required": item.get("skills_required") or item.get("matched_skills", []),
+            "raw_description": item.get("raw_description") or item.get("raw_markdown") or ""
+        })
+        safe_jd = html.escape(full_jd_text)
 
         table_rows.append(f"""
         <tr>
@@ -3066,9 +3715,12 @@ def render_console_matches_table(title: str, subtitle: str, items: List[Dict[str
                 </div>
             </td>
             <td>
-                <a href="{career_url}" target="_blank" style="color: #8AB4F8; font-weight: 600; text-decoration: none; font-size: 13px;" title="Open {source_channel} Requisition #{job_id}">
-                    {role_title} ↗
-                </a>
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 6px;">
+                    <a href="{career_url}" target="_blank" style="color: #8AB4F8; font-weight: 600; text-decoration: none; font-size: 13px;" title="Open {source_channel} Requisition #{job_id}">
+                        {role_title} ↗
+                    </a>
+                    <a href="#modal_{clean_jid}" class="role-info-icon" title="View Full Role Details & Job Description (JD)">ⓘ</a>
+                </div>
             </td>
             <td><b style="font-size: 13px; color: {score_color};">{score_val}%</b></td>
             <td style="font-size: 11.5px; white-space: nowrap;">{exp_asked}</td>
@@ -3090,6 +3742,65 @@ def render_console_matches_table(title: str, subtitle: str, items: List[Dict[str
                 </div>
             </td>
         </tr>
+        """)
+
+        modals_html.append(f"""
+        <div id="modal_{clean_jid}" class="jd-modal-overlay">
+            <a href="#close" class="jd-modal-backdrop"></a>
+            <div class="jd-modal-box">
+                <div class="jd-modal-header">
+                    <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 14px;">
+                        <div>
+                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <span style="font-size: 18px; font-weight: 700; color: #FFFFFF;">{comp_name}</span>
+                                <span class="status-pill-gray">{comp_group}</span>
+                                {source_pill}
+                                <span class="{pill_class}">{status_label}</span>
+                                <span style="font-size: 12px; font-weight: 600; color: {score_color}; background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 12px; border: 1px solid {score_color};">{score_val}% Match</span>
+                            </div>
+                            <h2 style="margin: 8px 0 0 0; font-size: 20px; font-weight: 600; color: #8AB4F8;">{role_title}</h2>
+                        </div>
+                        <a href="#close" class="jd-modal-close" title="Close Specification">✕</a>
+                    </div>
+                </div>
+
+                <div class="jd-meta-grid">
+                    <div class="jd-meta-item"><span class="jd-meta-label">Location</span><span class="jd-meta-value">{loc}</span></div>
+                    <div class="jd-meta-item"><span class="jd-meta-label">Work Mode</span><span class="jd-meta-value">{work_mode}</span></div>
+                    <div class="jd-meta-item"><span class="jd-meta-label">Experience Bracket</span><span class="jd-meta-value">{exp_asked}</span></div>
+                    <div class="jd-meta-item"><span class="jd-meta-label">Requisition ID</span><span class="jd-meta-value">#{job_id}</span></div>
+                    <div class="jd-meta-item"><span class="jd-meta-label">Match Category</span><span class="jd-meta-value">{status_label} ({score_val}%)</span></div>
+                    <div class="jd-meta-item"><span class="jd-meta-label">Domain</span><span class="jd-meta-value">{item.get('job_domain', 'Engineering')}</span></div>
+                </div>
+
+                <div class="jd-skills-box">
+                    <div style="margin-bottom: 8px;">
+                        <b style="color: #81C995; font-size: 11.5px; text-transform: uppercase;">Matched Candidate Skills:</b>
+                        <div style="margin-top: 4px;">{matched_chips}</div>
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <b style="color: #F28B82; font-size: 11.5px; text-transform: uppercase;">Skill Gaps (Lag Skills):</b>
+                        <div style="margin-top: 4px;">{lag_chips}</div>
+                    </div>
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid #28354E; border-radius: 4px; padding: 10px; margin-top: 8px;">
+                        <b style="color: #FDD663; font-size: 11.5px; text-transform: uppercase;">Tailoring Recommendation:</b>
+                        <p style="margin: 4px 0 0 0; color: #E8EAED; font-size: 12px; line-height: 1.5;">{tip}</p>
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <a href="{career_url}" target="_blank" class="btn-direct-apply" style="padding: 6px 14px; font-size: 12px;">Apply on Official Portal ↗</a>
+                    <a href="?nav=Deep+Analysis+%26+Tailoring&job_id={job_id}" target="_self" class="btn-deep-tailor" style="padding: 6px 14px; font-size: 12px;">Deep Analyse & Tailor Profile ↗</a>
+                    <a href="{google_jobs_hub}" target="_blank" style="background: #202534; color: #81C995; border: 1px solid rgba(52, 168, 83, 0.3); border-radius: 4px; padding: 6px 14px; font-size: 12px; text-decoration: none;">All Company Positions ↗</a>
+                    <a href="#close" style="background: rgba(255,255,255,0.06); color: #9AA0A6; border: 1px solid #374151; border-radius: 4px; padding: 6px 14px; font-size: 12px; text-decoration: none; margin-left: auto;">Close Window</a>
+                </div>
+
+                <div class="jd-content-section">
+                    <div style="font-size: 12px; font-weight: 600; color: #9AA0A6; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;">Complete Job Description (JD)</div>
+                    <div class="jd-raw-text">{safe_jd}</div>
+                </div>
+            </div>
+        </div>
         """)
 
     full_table = f"""
@@ -3125,6 +3836,7 @@ def render_console_matches_table(title: str, subtitle: str, items: List[Dict[str
                 {''.join(table_rows)}
             </tbody>
         </table>
+        {''.join(modals_html)}
     </div>
     """
     render_html(full_table)

@@ -21,7 +21,8 @@ from sqlalchemy import (
     Text,
     ForeignKey,
     JSON,
-    Index
+    Index,
+    Integer
 )
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -75,8 +76,8 @@ class CompanyJob(Base):
     company_name = Column(String(256), index=True, nullable=False)
     company_group = Column(String(64), index=True, default="MNC")  # MNC, AI_Startup, Remote_First, Enterprise
     source_channel = Column(String(64), index=True, default="Career Page")  # Career Page, LinkedIn, Naukri
-    title = Column(String(256), nullable=False)
-    location = Column(String(256), default="Remote")
+    title = Column(String(512), nullable=False)
+    location = Column(String(1024), default="Remote")
     work_mode = Column(String(64), default="Remote")  # Remote, Hybrid, On-site
     experience_text = Column(String(128), default="1 - 3 Years")
     min_exp = Column(Float, default=1.0)
@@ -84,6 +85,8 @@ class CompanyJob(Base):
     url = Column(String(1024), nullable=False)
     skills_required = Column(JSON, default=list)
     raw_description = Column(Text, nullable=True)
+    posted_date = Column(DateTime, nullable=True)  # Official posting date or calculated
+    is_active = Column(Boolean, default=True, index=True)
     fetched_date = Column(Date, default=lambda: datetime.now(timezone.utc).date(), index=True)
     created_at = Column(DateTime, default=utc_now_naive)
 
@@ -108,4 +111,21 @@ class AnalysisJobResult(Base):
     # Relationships
     user = relationship("User", back_populates="analysis_results")
     job = relationship("CompanyJob")
+
+
+class SyncJobState(Base):
+    __tablename__ = "sync_job_states"
+
+    id = Column(String(64), primary_key=True, default=generate_uuid)
+    status = Column(String(32), default="IDLE", index=True)  # IDLE, RUNNING, COMPLETED, FAILED
+    stage = Column(String(256), default="System Ready")
+    progress_pct = Column(Integer, default=0)
+    total_ingested = Column(Integer, default=0)
+    new_jobs_added = Column(Integer, default=0)
+    pruned_jobs = Column(Integer, default=0)
+    triggered_by = Column(String(128), default="System")
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
+
 

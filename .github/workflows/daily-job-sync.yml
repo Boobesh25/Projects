@@ -1,0 +1,41 @@
+name: Daily Autonomous Job Ingestion Sync
+
+on:
+  schedule:
+    # 02:00 AM IST daily (20:30 UTC)
+    - cron: '30 20 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  trigger-sync:
+    name: Dispatch Background Job Ingestion
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Job Radar Sync API
+        env:
+          API_URL: ${{ secrets.API_BASE_URL || 'https://career-portal-api.onrender.com' }}
+          SYNC_SECRET: ${{ secrets.JOB_SYNC_SECRET || 'jobradar_sync_secret_dev_2026' }}
+        run: |
+          echo "Dispatching non-blocking job sync to ${API_URL}/api/jobs/sync..."
+          RESPONSE_CODE=$(curl -s -o response.json -w "%{http_code}" -X POST \
+            "${API_URL}/api/jobs/sync" \
+            -H "X-Sync-Secret: ${SYNC_SECRET}" \
+            -H "Content-Type: application/json")
+          
+          echo "HTTP Response Status: ${RESPONSE_CODE}"
+          cat response.json || true
+          echo ""
+
+          if [ "$RESPONSE_CODE" -eq 202 ]; then
+            echo "Success: Background job sync successfully initiated."
+            exit 0
+          elif [ "$RESPONSE_CODE" -eq 409 ]; then
+            echo "Notice: A job sync is already currently running. Mutual exclusion lock active."
+            exit 0
+          else
+            echo "Error: Unexpected response code ${RESPONSE_CODE}"
+            exit 1
+          fi

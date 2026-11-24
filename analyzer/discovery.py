@@ -202,6 +202,17 @@ class JobDiscoveryEngine:
                         if "scientist" in t_lower or "machine learning" in t_lower:
                             tech_stack.extend(["machine learning", "pytorch"])
 
+                    from core.jd_formatter import JobDescriptionFormatter
+                    full_li_jd = JobDescriptionFormatter.get_full_job_description({
+                        "company_name": company,
+                        "title": title,
+                        "location": loc,
+                        "experience_text": "2 - 5 Years",
+                        "source_channel": "LinkedIn",
+                        "job_id": job_id,
+                        "skills_required": tech_stack,
+                        "raw_description": f"{title} at {company}. Direct requisition listed on LinkedIn Jobs."
+                    })
                     postings.append(JobPosting(
                         url=clean_url,
                         company=company,
@@ -212,7 +223,7 @@ class JobDiscoveryEngine:
                         posted_date="Live Today",
                         min_experience_years=2.0,
                         max_experience_years=5.0,
-                        raw_markdown=f"{title} at {company}. Direct requisition listed on LinkedIn Jobs.",
+                        raw_markdown=full_li_jd,
                         tech_stack=tech_stack
                     ))
                     if len(postings) >= limit:
@@ -415,8 +426,21 @@ class JobDiscoveryEngine:
         ]
 
         for item in naukri_catalog[:limit]:
+            from core.company_crawler import CompanyService
+            from core.jd_formatter import JobDescriptionFormatter
+            verified_naukri_url = CompanyService.get_official_naukri_url(item["company"], item["title"])
+            full_nk_jd = JobDescriptionFormatter.get_full_job_description({
+                "company_name": item["company"],
+                "title": item["title"],
+                "location": item["location"],
+                "experience_text": f"{int(item['exp_min'])} - {int(item['exp_max'])} Years",
+                "source_channel": "Naukri",
+                "job_id": item["job_id"],
+                "skills_required": item.get("tech_stack", []),
+                "raw_description": item.get("desc", "")
+            })
             postings.append(JobPosting(
-                url=item["url"],
+                url=verified_naukri_url,
                 company=item["company"],
                 title=item["title"],
                 location=item["location"],
@@ -425,7 +449,7 @@ class JobDiscoveryEngine:
                 posted_date="Live Today",
                 min_experience_years=item["exp_min"],
                 max_experience_years=item["exp_max"],
-                raw_markdown=item["desc"],
+                raw_markdown=full_nk_jd,
                 tech_stack=item["tech_stack"]
             ))
 
