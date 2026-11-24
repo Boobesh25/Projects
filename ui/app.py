@@ -33,6 +33,7 @@ import yaml
 
 try:
     from core.company_crawler import CompanyService
+    from core.ai_role_generator import AIRoleGenerator
     from core.pdf_report_generator import build_pdf_report
     from core.profile_optimizer import (
         sanitize_filename,
@@ -46,6 +47,7 @@ try:
     )
 except ImportError:
     from company_crawler import CompanyService
+    from ai_role_generator import AIRoleGenerator
     from pdf_report_generator import build_pdf_report
     from profile_optimizer import (
         sanitize_filename,
@@ -1865,13 +1867,62 @@ def render_main_dashboard():
             if "onboard_yaml" in st.session_state and st.session_state.onboard_yaml:
                 meta = st.session_state.onboard_meta
                 st.markdown("<hr style='border-color: #282D3B; margin: 18px 0;'>", unsafe_allow_html=True)
-                st.markdown("<div style='font-size: 13.5px; font-weight: 500; color: #E8EAED; margin-bottom: 6px;'>2. Review Extracted Candidate Profile (All Sections)</div>", unsafe_allow_html=True)
                 
+                # -------------------------------------------------------------
+                # 2. MANDATORY PERSONAL GEMINI API KEY CONFIGURATION
+                # -------------------------------------------------------------
+                st.markdown("<div style='font-size: 13.5px; font-weight: 500; color: #E8EAED; margin-bottom: 4px;'>2. Configure Personal Google Gemini API Key (Mandatory)</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-size: 12px; color: #9AA0A6; margin-bottom: 12px;'>Every user must configure their own personal Gemini API key. Keys are private, user-isolated, and strictly never shared with other candidates. Used to power AI direct/cross-domain role generation and authentic profile tailoring.<br>Get your free key from <a href='https://aistudio.google.com/app/apikey' target='_blank' style='color: #8AB4F8;'>Google AI Studio ↗</a></div>", unsafe_allow_html=True)
+
+                k_col1, k_col2 = st.columns([3, 1])
+                with k_col1:
+                    user_gemini_key = st.text_input("Enter Google Gemini API Key", type="password", value=st.session_state.get("gemini_api_key", ""), placeholder="AIzaSy...", key="onboard_gemini_key_input")
+                with k_col2:
+                    st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                    test_key_btn = st.button("Validate Key", type="secondary", use_container_width=True)
+
                 parsed_preview = {}
                 try:
                     parsed_preview = yaml.safe_load(st.session_state.onboard_yaml) or {}
                 except Exception:
                     pass
+
+                if test_key_btn or (user_gemini_key and not st.session_state.get("gemini_key_validated")):
+                    if user_gemini_key and user_gemini_key.strip():
+                        with st.spinner("Validating key with Google AI Studio..."):
+                            is_valid, v_msg = AIRoleGenerator.validate_gemini_key(user_gemini_key.strip())
+                            if is_valid:
+                                st.session_state.gemini_key_validated = True
+                                st.session_state.gemini_api_key = user_gemini_key.strip()
+                                st.session_state.ai_roles_info = AIRoleGenerator.generate_roles(parsed_preview, api_key=user_gemini_key.strip())
+                                st.success(f"{v_msg}")
+                            else:
+                                st.session_state.gemini_key_validated = False
+                                st.error(f"{v_msg}")
+                    elif test_key_btn:
+                        st.warning("Please enter your Gemini API key.")
+
+                # Render AI Inferred Career Profile once key is validated
+                if st.session_state.get("gemini_key_validated") and "ai_roles_info" in st.session_state:
+                    ai_info = st.session_state.ai_roles_info
+                    p_domain = ai_info.get("primary_domain", "Engineering")
+                    d_roles = ai_info.get("direct_roles", [])
+                    x_roles = ai_info.get("cross_roles", [])
+
+                    st.markdown("<div style='background: #182030; border: 1px solid #2D3D5E; border-radius: 6px; padding: 14px; margin: 12px 0;'>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='font-size: 13px; font-weight: 600; color: #8AB4F8; margin-bottom: 6px;'>AI Inferred Primary Domain: <span style='color: #FFFFFF;'>{p_domain}</span></div>", unsafe_allow_html=True)
+
+                    st.markdown("<div style='font-size: 11.5px; font-weight: 600; color: #81C995; margin-top: 8px;'>AI DIRECT TARGET ROLES (Core Qualifying):</div>", unsafe_allow_html=True)
+                    d_chips = " ".join([f"<span class='chip-green' title='{r.get('fit_reason', '')}'>{r.get('title')}</span>" for r in d_roles])
+                    st.markdown(f"<div style='margin-bottom: 8px;'>{d_chips}</div>", unsafe_allow_html=True)
+
+                    st.markdown("<div style='font-size: 11.5px; font-weight: 600; color: #FDD663; margin-top: 8px;'>AI CROSS-DOMAIN ROLES (Adjacent Opportunities):</div>", unsafe_allow_html=True)
+                    x_chips = " ".join([f"<span class='chip-yellow' title='{r.get('fit_reason', '')}'>{r.get('title')}</span>" for r in x_roles])
+                    st.markdown(f"<div style='margin-bottom: 4px;'>{x_chips}</div>", unsafe_allow_html=True)
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                st.markdown("<hr style='border-color: #282D3B; margin: 18px 0;'>", unsafe_allow_html=True)
+                st.markdown("<div style='font-size: 13.5px; font-weight: 500; color: #E8EAED; margin-bottom: 6px;'>3. Review Extracted Candidate Profile (All Sections)</div>", unsafe_allow_html=True)
 
                 exp_list = parsed_preview.get("experience", [])
                 proj_list = parsed_preview.get("projects", [])
@@ -1942,28 +1993,32 @@ def render_main_dashboard():
                     revised_yaml = st.text_area("Review Extracted YAML Profile Ground Truth", value=st.session_state.onboard_yaml, height=260)
                 
                 if st.button("Confirm & Activate Profile", type="primary"):
-                    try:
-                        active_api = st.session_state.get("api_base_url", API_BASE).rstrip("/")
-                        payload = {
-                            "candidate_name": c_name_input or meta.get("candidate_name", user_name),
-                            "professional_title": c_title_input or meta.get("professional_title", "AI Engineer"),
-                            "experience_years": meta.get("experience_years", 3.0),
-                            "verified_skills": skills_list,
-                            "profile_yaml": revised_yaml if 'revised_yaml' in locals() else st.session_state.onboard_yaml
-                        }
-                        r_save = requests.post(f"{active_api}/api/profile/save", json=payload, headers=get_auth_headers(), timeout=10)
-                        if r_save.status_code == 200:
-                            st.session_state.is_onboarded = True
-                            st.session_state.onboard_yaml = None
-                            st.session_state.onboard_meta = None
-                            st.session_state.nav_selection = "Analyse Companies"
-                            st.success("Candidate Profile activated successfully! Unlocking full console access...")
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error(f"Failed to save profile: {r_save.text}")
-                    except Exception as e:
-                        st.error(f"Error saving profile: {e}")
+                    if not st.session_state.get("gemini_key_validated"):
+                        st.error("Mandatory: Please enter and validate your personal Google Gemini API key in Step 2 above before activating your profile.")
+                    else:
+                        try:
+                            active_api = st.session_state.get("api_base_url", API_BASE).rstrip("/")
+                            payload = {
+                                "candidate_name": c_name_input or meta.get("candidate_name", user_name),
+                                "professional_title": c_title_input or meta.get("professional_title", "AI Engineer"),
+                                "experience_years": meta.get("experience_years", 3.0),
+                                "verified_skills": skills_list,
+                                "profile_yaml": revised_yaml if 'revised_yaml' in locals() else st.session_state.onboard_yaml,
+                                "api_key": st.session_state.get("gemini_api_key", "")
+                            }
+                            r_save = requests.post(f"{active_api}/api/profile/save", json=payload, headers=get_auth_headers(), timeout=10)
+                            if r_save.status_code == 200:
+                                st.session_state.is_onboarded = True
+                                st.session_state.onboard_yaml = None
+                                st.session_state.onboard_meta = None
+                                st.session_state.nav_selection = "Analyse Companies"
+                                st.success("Candidate Profile activated successfully! Unlocking full console access...")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error(f"Failed to save profile: {r_save.text}")
+                        except Exception as e:
+                            st.error(f"Error saving profile: {e}")
 
         # Stop execution here so un-onboarded users CANNOT see or access other tabs
         return
@@ -1989,6 +2044,64 @@ def render_main_dashboard():
                 st.rerun()
 
         st.markdown("<br>", unsafe_allow_html=True)
+
+        # ---------------------------------------------------------------------
+        # AI Profile Target Roles & Domain Showcase
+        # ---------------------------------------------------------------------
+        if "ai_roles_info" in st.session_state and st.session_state.ai_roles_info:
+            ai_r = st.session_state.ai_roles_info
+            p_dom = ai_r.get("primary_domain", "Engineering")
+            d_list = ai_r.get("direct_roles", [])
+            x_list = ai_r.get("cross_roles", [])
+            d_pills = " ".join([f"<span class='chip-green' title='{r.get('fit_reason', '')}'>{r.get('title')}</span>" for r in d_list])
+            x_pills = " ".join([f"<span class='chip-yellow' title='{r.get('fit_reason', '')}'>{r.get('title')}</span>" for r in x_list])
+
+            st.markdown(f"""
+            <div style="background: #182030; border: 1px solid #283754; border-radius: 6px; padding: 12px 16px; margin: 8px 0 16px 0;">
+                <div style="font-size: 13px; font-weight: 600; color: #8AB4F8; margin-bottom: 6px;">
+                    AI Inferred Target Domain: <span style="color: #FFFFFF;">{p_dom}</span>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 6px;">
+                    <b style="color: #81C995;">Direct Target Roles:</b> {d_pills}
+                </div>
+                <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px;">
+                    <b style="color: #FDD663;">Cross-Domain Targets:</b> {x_pills}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # ---------------------------------------------------------------------
+        # Instant On-Demand Evaluation for ANY Company (Global Scope)
+        # ---------------------------------------------------------------------
+        st.markdown("""
+        <div style="background: #1B2232; border: 1px solid #28354E; border-radius: 6px; padding: 12px 16px; margin-bottom: 14px;">
+            <div style="font-size: 13.5px; font-weight: 600; color: #E8EAED;">Instant On-Demand Evaluation for ANY Company</div>
+            <div style="font-size: 11.5px; color: #9AA0A6; margin-bottom: 8px;">Enter ANY company name (Startup, MNC, Mid-market). Evaluates lively on-demand with direct official Career Portal, LinkedIn (latest), and Naukri links against your profile.</div>
+        </div>
+        """, unsafe_allow_html=True)
+        od_col1, od_col2 = st.columns([3, 1.2])
+        with od_col1:
+            od_input_comp = st.text_input("Company Name to Evaluate", placeholder="e.g. Datadog, Anthropic, CrowdStrike, BHEL, Zoho, Stripe, Snowflake...", key="quick_od_comp_name", label_visibility="collapsed")
+        with od_col2:
+            od_eval_btn = st.button("Evaluate On-Demand", type="primary", use_container_width=True)
+
+        if od_eval_btn and od_input_comp and od_input_comp.strip():
+            with st.spinner(f"Evaluating '{od_input_comp.strip()}' across Career Portal, LinkedIn & Naukri..."):
+                try:
+                    payload = {
+                        "selected_companies": [od_input_comp.strip()],
+                        "selected_group": "All",
+                        "selected_channel": "All"
+                    }
+                    r_od = requests.post(f"{API_BASE}/api/analyze", json=payload, headers=get_auth_headers(), timeout=35)
+                    if r_od.status_code == 200:
+                        st.session_state.analysis_results = r_od.json()
+                        st.session_state.nav_selection = "Results & Recommendations"
+                        st.rerun()
+                    else:
+                        st.error(f"Analysis error: {r_od.text}")
+                except Exception as e:
+                    st.error(f"API Error: {e}")
 
         # Compact Filter Bar with Sector & Channel
         f_col1, f_col2, f_col3 = st.columns([1, 1, 2])
@@ -2925,6 +3038,10 @@ def render_console_matches_table(title: str, subtitle: str, items: List[Dict[str
         exp_asked = item.get("experience_asked", "N/A")
         work_mode = item.get("work_mode", "Remote")
 
+        career_url = item.get("career_portal_url") or item.get("job_apply_url") or CompanyService.get_official_career_url(comp_name)
+        li_url = item.get("linkedin_jobs_url") or CompanyService.get_official_linkedin_url(comp_name, role_title)
+        nk_url = item.get("naukri_jobs_url") or CompanyService.get_official_naukri_url(comp_name, role_title)
+
         # Dynamic score color
         score_color = "#81C995" if score_val >= 75 else ("#FDD663" if score_val >= 60 else "#F28B82")
 
@@ -2934,7 +3051,7 @@ def render_console_matches_table(title: str, subtitle: str, items: List[Dict[str
             <td>{source_pill}</td>
             <td><span class="{pill_class}">{status_label}</span></td>
             <td>
-                <a href="{apply_url}" target="_blank" class="job-id-pill" title="{source_channel} Requisition #{job_id}">
+                <a href="{career_url}" target="_blank" class="job-id-pill" title="{source_channel} Requisition #{job_id}">
                     #{job_id} ↗
                 </a>
             </td>
@@ -2947,7 +3064,7 @@ def render_console_matches_table(title: str, subtitle: str, items: List[Dict[str
                 </div>
             </td>
             <td>
-                <a href="{apply_url}" target="_blank" style="color: #8AB4F8; font-weight: 600; text-decoration: none; font-size: 13px;" title="Open {source_channel} Requisition #{job_id}">
+                <a href="{career_url}" target="_blank" style="color: #8AB4F8; font-weight: 600; text-decoration: none; font-size: 13px;" title="Open {source_channel} Requisition #{job_id}">
                     {role_title} ↗
                 </a>
             </td>
@@ -2958,12 +3075,16 @@ def render_console_matches_table(title: str, subtitle: str, items: List[Dict[str
             <td style="max-width: 140px;">{lag_chips}</td>
             <td style="font-size: 11px; color: #CBD5E1; max-width: 200px; line-height: 1.4;">{tip}</td>
             <td style="white-space: nowrap;">
-                <a href="{apply_url}" target="_blank" class="btn-direct-apply" title="Apply directly on {source_channel} (#{job_id})">
-                    Apply #{job_id} ↗
-                </a>
-                <a href="?nav=Deep+Analysis+%26+Tailoring&job_id={job_id}" target="_self" class="btn-deep-tailor" title="Deep Analyse & Optimize profile for {role_title}">
-                    Deep Analyse & Optimize ↗
-                </a>
+                <div style="display: flex; flex-direction: column; gap: 4px;">
+                    <div style="display: flex; gap: 4px;">
+                        <a href="{career_url}" target="_blank" class="source-pill-career" style="text-decoration: none; padding: 2px 6px; font-size: 10.5px;" title="Official Direct Career Portal">Career Portal ↗</a>
+                        <a href="{li_url}" target="_blank" class="source-pill-linkedin" style="text-decoration: none; padding: 2px 6px; font-size: 10.5px;" title="LinkedIn Requisitions (Sorted by Date DD)">LinkedIn ↗</a>
+                        <a href="{nk_url}" target="_blank" class="source-pill-naukri" style="text-decoration: none; padding: 2px 6px; font-size: 10.5px;" title="Naukri Direct Query">Naukri ↗</a>
+                    </div>
+                    <a href="?nav=Deep+Analysis+%26+Tailoring&job_id={job_id}" target="_self" class="btn-deep-tailor" style="text-align: center; padding: 2px 6px; font-size: 11px;" title="Deep Analyse & Optimize profile for {role_title}">
+                        Tailor Document ↗
+                    </a>
+                </div>
             </td>
         </tr>
         """)

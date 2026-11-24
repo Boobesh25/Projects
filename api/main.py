@@ -105,6 +105,7 @@ class SaveProfileRequest(BaseModel):
     professional_title: str
     experience_years: float = 3.0
     verified_skills: List[str]
+    api_key: Optional[str] = None
 
 class RunAnalysisRequest(BaseModel):
     selected_companies: Optional[List[str]] = None
@@ -324,8 +325,6 @@ async def upload_and_analyze_document(
     res = await session.execute(stmt)
     user = res.scalar_one_or_none()
     api_key = user.api_key if user else None
-    if not api_key:
-        api_key = os.getenv("GEMINI_API_KEY")
 
     yaml_str, skills, profile_dict = DocumentProfileAnalyzer.generate_yaml_profile(
         raw_text=raw_text,
@@ -343,6 +342,33 @@ async def upload_and_analyze_document(
         "profile_yaml": yaml_str
     }
 
+@app.post("/api/user/validate-key")
+async def validate_api_key(req: ApiKeyRequest):
+    """Validates a Gemini API key live against Google AI Studio."""
+    from core.ai_role_generator import AIRoleGenerator
+    is_valid, msg = AIRoleGenerator.validate_gemini_key(req.api_key)
+    return {"valid": is_valid, "message": msg}
+
+@app.get("/api/profile/ai-roles")
+async def get_ai_roles(
+    user_payload: Dict[str, Any] = Depends(get_current_user_payload),
+    session: AsyncSession = Depends(get_db_session)
+):
+    """Infers direct roles and cross-domain roles using candidate's verified profile and user's isolated API key."""
+    user_id = user_payload["sub"]
+    cand = await session.scalar(select(CandidateProfile).where(CandidateProfile.user_id == user_id))
+    if not cand:
+        raise HTTPException(status_code=404, detail="Candidate profile not found.")
+    user = await session.scalar(select(User).where(User.id == user_id))
+    user_key = user.api_key if user else None
+
+    import yaml
+    from core.ai_role_generator import AIRoleGenerator
+    p_dict = yaml.safe_load(cand.profile_yaml) or {}
+    p_dict["verified_skills"] = cand.verified_skills or []
+    roles_info = AIRoleGenerator.generate_roles(p_dict, api_key=user_key)
+    return roles_info
+
 @app.post("/api/profile/save")
 async def save_profile(
     req: SaveProfileRequest,
@@ -351,6 +377,15 @@ async def save_profile(
 ):
     """Confirm and onboard candidate profile into PostgreSQL."""
     user_id = user_payload["sub"]
+
+    # Persist user's personal API key if provided
+    if req.api_key and req.api_key.strip():
+        stmt_u = select(User).where(User.id == user_id)
+        res_u = await session.execute(stmt_u)
+        user = res_u.scalar_one_or_none()
+        if user:
+            user.api_key = req.api_key.strip()
+
     stmt = select(CandidateProfile).where(CandidateProfile.user_id == user_id)
     res = await session.execute(stmt)
     profile = res.scalar_one_or_none()
@@ -605,7 +640,9 @@ async def tailor_prompt_edit(
     """Takes existing candidate markdown and modifies/enriches it with Gemini based on user prompt."""
     user_id = user_payload["sub"]
     user = await session.scalar(select(User).where(User.id == user_id))
-    effective_key = req.api_key or (user.api_key if user else None) or os.getenv("GEMINI_API_KEY")
+    effective_key = req.api_key or (user.api_key if user else None)
+    if not effective_key:
+        raise HTTPException(status_code=400, detail="Gemini API Key required. Configure your personal key in settings or onboarding.")
 
     from profile_optimizer import prompt_enhance_document_with_gemini
     updated_md = prompt_enhance_document_with_gemini(
@@ -629,7 +666,9 @@ async def tailor_analyze(
         raise HTTPException(status_code=404, detail="Candidate profile not found.")
 
     user = await session.scalar(select(User).where(User.id == user_id))
-    effective_api_key = req.api_key or (user.api_key if user else None) or os.getenv("GEMINI_API_KEY")
+    effective_api_key = req.api_key or (user.api_key if user else None)
+    if not effective_api_key:
+        raise HTTPException(status_code=400, detail="Gemini API Key required. Configure your personal key in settings or onboarding.")
 
     import yaml
     from profile_optimizer import generate_tailored_profile_with_gemini, detect_skill_equivalences
@@ -715,7 +754,9 @@ async def tailor_chat(
     """
     user_id = user_payload["sub"]
     user = await session.scalar(select(User).where(User.id == user_id))
-    effective_key = req.api_key or (user.api_key if user else None) or os.getenv("GEMINI_API_KEY")
+    effective_key = req.api_key or (user.api_key if user else None)
+    if not effective_key:
+        raise HTTPException(status_code=400, detail="Gemini API Key required. Configure your personal key in settings or onboarding.")
 
     try:
         from core.chat_agent_service import generate_chat_stream
