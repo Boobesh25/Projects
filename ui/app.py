@@ -1501,7 +1501,7 @@ def render_login():
                                 st.session_state.last_reuploaded_doc_name = None
                                 st.rerun()
                             elif r.status_code == 403:
-                                st.error(f"Access Denied: Account '{clean_email}' is not authorized. Please contact the administrator (boobesh2509@gmail.com) for access.")
+                                st.error("Access Denied: Account is not authorized. Please contact your system administrator for access.")
                             else:
                                 st.error(f"Sign-in failed ({r.status_code}): {r.text}")
                         except Exception as e:
@@ -1515,7 +1515,7 @@ def render_login():
                             2. Set your Cloudflare Tunnel URL:
                             ```toml
                             API_BASE_URL = "https://<your-jobradar-tunnel>.trycloudflare.com"
-                            DEFAULT_USER_EMAIL = "boobesh2509@gmail.com"
+                            DEFAULT_USER_EMAIL = "your-email@example.com"
                             ```
                             3. Save and reboot your app.
                             """)

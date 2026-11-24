@@ -184,7 +184,7 @@ async def dev_login(req: DevLoginRequest, session: AsyncSession = Depends(get_db
         else:
             raise HTTPException(
                 status_code=403,
-                detail=f"Access Denied: Account '{clean_email}' is not authorized. Please contact administrator (boobesh2509@gmail.com) for access."
+                detail="Access Denied: Account is not authorized. Please contact your system administrator for access."
             )
 
     p_stmt = select(CandidateProfile).where(CandidateProfile.user_id == user.id)
@@ -211,7 +211,7 @@ async def list_authorized_users(
     """Only boobesh2509@gmail.com can list all authorized users."""
     caller_email = (user_payload.get("email") or "").strip().lower()
     if caller_email != "boobesh2509@gmail.com":
-        raise HTTPException(status_code=403, detail="Forbidden: Only boobesh2509@gmail.com can manage users.")
+        raise HTTPException(status_code=403, detail="Forbidden: Administrative privileges required.")
 
     stmt = select(User).order_by(User.created_at.asc())
     res = await session.execute(stmt)
@@ -238,7 +238,7 @@ async def add_authorized_user(
     """Only boobesh2509@gmail.com can authorize new users."""
     caller_email = (user_payload.get("email") or "").strip().lower()
     if caller_email != "boobesh2509@gmail.com":
-        raise HTTPException(status_code=403, detail="Forbidden: Only boobesh2509@gmail.com can authorize new users.")
+        raise HTTPException(status_code=403, detail="Forbidden: Administrative privileges required.")
 
     new_email = (req.email or "").strip().lower()
     if not new_email or "@" not in new_email:
@@ -269,7 +269,7 @@ async def revoke_authorized_user(
     """Only boobesh2509@gmail.com can revoke user access."""
     caller_email = (user_payload.get("email") or "").strip().lower()
     if caller_email != "boobesh2509@gmail.com":
-        raise HTTPException(status_code=403, detail="Forbidden: Only boobesh2509@gmail.com can revoke user access.")
+        raise HTTPException(status_code=403, detail="Forbidden: Administrative privileges required.")
 
     clean_target = (target_email or "").strip().lower()
     if clean_target == "boobesh2509@gmail.com":
