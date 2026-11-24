@@ -58,8 +58,13 @@ except ImportError:
         clean_markdown_links
     )
 
-# Backend URL (configurable for Docker, cloud, or local deployment)
-API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
+# Backend URL (configurable for Docker, Streamlit Cloud, or local deployment)
+API_BASE = os.getenv("API_BASE_URL")
+if not API_BASE:
+    try:
+        API_BASE = st.secrets.get("API_BASE_URL", "http://localhost:8000")
+    except Exception:
+        API_BASE = "http://localhost:8000"
 
 # Page Config
 st.set_page_config(
@@ -990,7 +995,12 @@ render_html(CONSOLE_THEME_CSS)
 # -----------------------------------------------------------------------------
 # Session State Initialization
 # -----------------------------------------------------------------------------
-DEFAULT_USER_EMAIL = "boobesh2509@gmail.com"
+DEFAULT_USER_EMAIL = os.getenv("DEFAULT_USER_EMAIL")
+if not DEFAULT_USER_EMAIL:
+    try:
+        DEFAULT_USER_EMAIL = st.secrets.get("DEFAULT_USER_EMAIL", "boobesh2509@gmail.com")
+    except Exception:
+        DEFAULT_USER_EMAIL = "boobesh2509@gmail.com"
 
 if "token" not in st.session_state:
     st.session_state.token = None
