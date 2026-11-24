@@ -78,101 +78,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-def inject_sidebar_script():
-    """Injects robust cross-frame JavaScript to bind custom topbar hamburger to Streamlit's native sidebar collapse/expand."""
-    components.html("""
-    <script>
-    (function() {
-        function getParentDocument() {
-            try {
-                return window.parent.document;
-            } catch (e) {
-                return document;
-            }
-        }
-
-        function tryToggleSidebar(doc) {
-            if (!doc) return false;
-            // 1. Check if sidebar is currently open or collapsed
-            const sidebar = doc.querySelector('section[data-testid="stSidebar"]');
-            let isCollapsed = true;
-            if (sidebar) {
-                const style = window.getComputedStyle(sidebar);
-                const transform = style.transform || '';
-                isCollapsed = (sidebar.getAttribute('aria-expanded') === 'false') ||
-                              (style.display === 'none') ||
-                              (style.visibility === 'hidden') ||
-                              (sidebar.offsetWidth === 0) ||
-                              (transform.indexOf('-') > -1);
-            }
-
-            const openSelectors = [
-                '[data-testid="stSidebarCollapsedControl"] button',
-                '[data-testid="collapsedControl"] button',
-                'button[data-testid="stSidebarCollapsedControl"]',
-                'button[data-testid="collapsedControl"]',
-                'button[aria-label="Open sidebar"]',
-                'button[aria-label="Expand sidebar"]',
-                'header [data-testid="baseButton-headerNoPadding"]',
-                'header button[kind="headerNoPadding"]',
-                'header button'
-            ];
-
-            const closeSelectors = [
-                '[data-testid="stSidebarCollapseButton"] button',
-                'button[data-testid="stSidebarCollapseButton"]',
-                'button[aria-label="Close sidebar"]',
-                'button[aria-label="Collapse sidebar"]',
-                'section[data-testid="stSidebar"] button[kind="header"]',
-                'section[data-testid="stSidebar"] button'
-            ];
-
-            const targetSelectors = isCollapsed ? openSelectors : closeSelectors;
-            for (let i = 0; i < targetSelectors.length; i++) {
-                const btn = doc.querySelector(targetSelectors[i]);
-                if (btn && btn.offsetParent !== null) {
-                    btn.click();
-                    return true;
-                }
-            }
-
-            // Fallback: try alternative list
-            const fallbackSelectors = isCollapsed ? closeSelectors : openSelectors;
-            for (let j = 0; j < fallbackSelectors.length; j++) {
-                const btn = doc.querySelector(fallbackSelectors[j]);
-                if (btn) {
-                    btn.click();
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        function bindSidebarToggle() {
-            const doc = getParentDocument();
-            if (!doc) return;
-
-            const toggleBtns = doc.querySelectorAll('.console-hamburger-btn, #consoleSidebarToggle, .mobile-menu-toggle-btn');
-            toggleBtns.forEach(btn => {
-                if (!btn.dataset.bound) {
-                    btn.dataset.bound = 'true';
-                    const handler = function(e) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        tryToggleSidebar(doc);
-                    };
-                    btn.addEventListener('click', handler);
-                    btn.addEventListener('touchend', handler);
-                }
-            });
-        }
-
-        bindSidebarToggle();
-        setInterval(bindSidebarToggle, 300);
-    })();
-    </script>
-    """, height=0, width=0)
-
 def render_html(html_str: str):
     """
     Renders pure HTML in Streamlit safely.
@@ -229,56 +134,82 @@ html, body, [class*="css"] {
 
 /* Main Container Padding Reduction */
 .block-container {
-    padding-top: 0.6rem !important;
+    padding-top: 4.2rem !important;
     padding-bottom: 2rem !important;
     padding-left: 1.5rem !important;
     padding-right: 1.5rem !important;
     max-width: 100% !important;
 }
 
-/* Transparent Header Container retaining Sidebar Collapsed Control */
+@media screen and (max-width: 768px) {
+    .block-container {
+        padding-top: 3.8rem !important;
+        padding-bottom: 1.5rem !important;
+        padding-left: 0.8rem !important;
+        padding-right: 0.8rem !important;
+    }
+}
+
+/* Header Container retaining native Sidebar Controls */
 header[data-testid="stHeader"] {
-    background: transparent !important;
-    height: 0px !important;
-    min-height: 0px !important;
-    overflow: visible !important;
+    background-color: #161B26 !important;
+    border-bottom: 1px solid #282D3B !important;
+    height: 50px !important;
+    min-height: 50px !important;
     z-index: 100000 !important;
+    display: flex !important;
+    align-items: center !important;
+    padding: 0 12px !important;
+    overflow: visible !important;
 }
+
+/* Header Brand Title */
+header[data-testid="stHeader"]::after {
+    content: "JobRadar Console";
+    font-family: 'Google Sans', 'Roboto', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    color: #E8EAED;
+    margin-left: 10px;
+    display: inline-block;
+}
+
+/* Keep Toolbar active so native Sidebar Toggle is fully interactive */
 div[data-testid="stToolbar"] {
-    display: none !important;
-    visibility: hidden !important;
+    display: flex !important;
+    visibility: visible !important;
+    align-items: center !important;
+    height: 100% !important;
 }
-div[data-testid="stDecoration"] {
-    display: none !important;
-}
-div[data-testid="stStatusWidget"] {
-    display: none !important;
-}
+
+/* Hide Streamlit dev menu & deploy buttons only, keep sidebar controls */
+#MainMenu,
+div[data-testid="stToolbarActions"],
+div[data-testid="stDecoration"],
+div[data-testid="stStatusWidget"],
 footer {
     display: none !important;
 }
 
-/* Ensure the collapsed sidebar toggle is styled, visible, and always clickable */
+/* Native Sidebar Expand/Collapse Controls - Always Touch-Friendly & Visible */
+[data-testid="stExpandSidebarButton"],
 [data-testid="stSidebarCollapsedControl"],
-[data-testid="collapsedControl"],
-button[data-testid="stSidebarCollapsedControl"] {
-    display: flex !important;
+[data-testid="collapsedControl"] {
+    display: inline-flex !important;
     visibility: visible !important;
-    position: fixed !important;
-    top: 8px !important;
-    left: 8px !important;
-    z-index: 100002 !important;
+    align-items: center !important;
+    justify-content: center !important;
+    z-index: 100001 !important;
     pointer-events: auto !important;
-    touch-action: manipulation !important;
 }
+
+[data-testid="stExpandSidebarButton"] button,
 [data-testid="stSidebarCollapsedControl"] button,
-[data-testid="collapsedControl"] button,
-button[data-testid="stSidebarCollapsedControl"] {
+[data-testid="collapsedControl"] button {
     background: #1A73E8 !important;
     color: #FFFFFF !important;
     border: none !important;
     border-radius: 6px !important;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.5) !important;
     width: 36px !important;
     height: 36px !important;
     min-width: 36px !important;
@@ -287,6 +218,13 @@ button[data-testid="stSidebarCollapsedControl"] {
     align-items: center !important;
     justify-content: center !important;
     cursor: pointer !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3) !important;
+}
+
+[data-testid="stExpandSidebarButton"] button:hover,
+[data-testid="stSidebarCollapsedControl"] button:hover {
+    background: #1765CC !important;
+    color: #FFFFFF !important;
 }
 
 /* Console Sidebar Styling */
@@ -1869,79 +1807,6 @@ def render_main_dashboard():
         st.session_state.last_uploaded_doc_name = None
         st.session_state.last_reuploaded_doc_name = None
         st.rerun()
-
-    # Inject sidebar event listeners for instant toggling
-    inject_sidebar_script()
-
-    # -------------------------------------------------------------------------
-    # TOP APP BAR (JobRadar Enterprise Header - Clean & Zero Dummy Widgets)
-    # -------------------------------------------------------------------------
-    top_bar_html = f"""
-    <div class="console-top-bar">
-        <div class="console-top-left">
-            <button class="console-hamburger-btn" id="consoleSidebarToggle" title="Toggle Navigation Sidebar">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#BDC1C6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="3" y1="12" x2="21" y2="12"></line>
-                    <line x1="3" y1="6" x2="21" y2="6"></line>
-                    <line x1="3" y1="18" x2="21" y2="18"></line>
-                </svg>
-            </button>
-            <div class="console-logo-title">
-                <span>JobRadar Console</span>
-            </div>
-            <div class="console-project-pill" title="Production Environment">
-                <span class="project-dot"></span>
-                <span>career-radar-prod</span>
-            </div>
-        </div>
-        <div class="console-top-right">
-            <div class="console-user-dock-top">
-                <div class="console-top-avatar">{first_letter}</div>
-                <span class="console-user-email-top">{user_email}</span>
-            </div>
-        </div>
-    </div>
-    """
-    render_html(top_bar_html)
-
-    # -------------------------------------------------------------------------
-    # MOBILE & RESPONSIVE QUICK NAVIGATION SWITCHER
-    # (Guarantees instant section switching on mobile & when sidebar is collapsed)
-    # -------------------------------------------------------------------------
-    if st.session_state.is_onboarded:
-        q_c1, q_c2 = st.columns([3, 1])
-        with q_c1:
-            q_nav_idx = 0
-            for i, opt in enumerate(menu_options):
-                if opt.lower() == selected_menu.lower():
-                    q_nav_idx = i
-                    break
-            quick_nav = st.selectbox(
-                "Console Navigation",
-                menu_options,
-                index=q_nav_idx,
-                key="console_quick_nav_select",
-                label_visibility="collapsed"
-            )
-            if quick_nav != selected_menu:
-                st.session_state.nav_selection = quick_nav
-                st.rerun()
-        with q_c2:
-            if st.button("Sidebar Menu", key="quick_open_sidebar_btn", use_container_width=True, type="secondary"):
-                components.html("""
-                <script>
-                (function() {
-                    try {
-                        const parentDoc = window.parent.document;
-                        const openBtn = parentDoc.querySelector('[data-testid="stSidebarCollapsedControl"] button') ||
-                                        parentDoc.querySelector('[data-testid="collapsedControl"] button') ||
-                                        parentDoc.querySelector('button[aria-label="Open sidebar"]') ||
-                                        parentDoc.querySelector('header button');
-                        if (openBtn) openBtn.click();
-                    } catch(e) {}
-                })();
-                </script>
-                """, height=0, width=0)
 
     # -------------------------------------------------------------------------
     # BREADCRUMB & SUB-HEADER
