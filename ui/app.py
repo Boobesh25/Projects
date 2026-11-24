@@ -3038,7 +3038,9 @@ def render_console_matches_table(title: str, subtitle: str, items: List[Dict[str
         exp_asked = item.get("experience_asked", "N/A")
         work_mode = item.get("work_mode", "Remote")
 
+        import urllib.parse
         career_url = item.get("career_portal_url") or item.get("job_apply_url") or CompanyService.get_official_career_url(comp_name)
+        google_jobs_hub = f"https://www.google.com/search?q={urllib.parse.quote(comp_name + ' jobs openings')}&ibp=htl;jobs"
         li_url = item.get("linkedin_jobs_url") or CompanyService.get_official_linkedin_url(comp_name, role_title)
         nk_url = item.get("naukri_jobs_url") or CompanyService.get_official_naukri_url(comp_name, role_title)
 
@@ -3076,8 +3078,9 @@ def render_console_matches_table(title: str, subtitle: str, items: List[Dict[str
             <td style="font-size: 11px; color: #CBD5E1; max-width: 200px; line-height: 1.4;">{tip}</td>
             <td style="white-space: nowrap;">
                 <div style="display: flex; flex-direction: column; gap: 4px;">
-                    <div style="display: flex; gap: 4px;">
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px;">
                         <a href="{career_url}" target="_blank" class="source-pill-career" style="text-decoration: none; padding: 2px 6px; font-size: 10.5px;" title="Official Direct Career Portal">Career Portal ↗</a>
+                        <a href="{google_jobs_hub}" target="_blank" style="background: rgba(52, 168, 83, 0.15); color: #81C995; border: 1px solid rgba(52, 168, 83, 0.3); border-radius: 3px; padding: 2px 6px; font-size: 10.5px; text-decoration: none;" title="View ALL live open positions for {comp_name} on one master page">All Positions Hub ↗</a>
                         <a href="{li_url}" target="_blank" class="source-pill-linkedin" style="text-decoration: none; padding: 2px 6px; font-size: 10.5px;" title="LinkedIn Requisitions (Sorted by Date DD)">LinkedIn ↗</a>
                         <a href="{nk_url}" target="_blank" class="source-pill-naukri" style="text-decoration: none; padding: 2px 6px; font-size: 10.5px;" title="Naukri Direct Query">Naukri ↗</a>
                     </div>
@@ -3156,10 +3159,12 @@ def render_no_openings_table(title: str, subtitle: str, items: List[Dict[str, An
     for item in items:
         c_name = item.get("company_name", "N/A")
         grp = item.get("company_group", "MNC")
-        portal_url = resolve_career_url(item, c_name)
-        tip = item.get("tailoring_tip", "0 active GenAI/Python openings listed currently.")
-        li_link = f"https://www.linkedin.com/jobs/search/?keywords={urllib.parse.quote(c_name)}%20python"
-        nk_link = CompanyService.get_official_naukri_url(c_name, "python")
+        portal_url = item.get("career_portal_url") or resolve_career_url(item, c_name)
+        google_hub = f"https://www.google.com/search?q={urllib.parse.quote(c_name + ' jobs openings')}&ibp=htl;jobs"
+        tip = item.get("tailoring_tip", "0 active openings listed in local database.")
+        cand_target = st.session_state.get("onboard_meta", {}).get("professional_title", "Engineer")
+        li_link = item.get("linkedin_jobs_url") or CompanyService.get_official_linkedin_url(c_name, cand_target)
+        nk_link = item.get("naukri_jobs_url") or CompanyService.get_official_naukri_url(c_name, cand_target)
 
         table_rows.append(f"""
         <tr>
@@ -3170,6 +3175,7 @@ def render_no_openings_table(title: str, subtitle: str, items: List[Dict[str, An
             <td style="font-size: 11.5px; color: #9AA0A6;">{tip}</td>
             <td style="white-space: nowrap;">
                 <a href="{portal_url}" target="_blank" class="source-pill-career" style="text-decoration: none; margin-right: 4px;">Career Portal ↗</a>
+                <a href="{google_hub}" target="_blank" style="background: rgba(52, 168, 83, 0.15); color: #81C995; border: 1px solid rgba(52, 168, 83, 0.3); border-radius: 3px; padding: 2px 6px; font-size: 10.5px; text-decoration: none; margin-right: 4px;" title="View ALL live open positions for {c_name} on one master page">All Positions Hub ↗</a>
                 <a href="{li_link}" target="_blank" class="source-pill-linkedin" style="text-decoration: none; margin-right: 4px;">LinkedIn ↗</a>
                 <a href="{nk_link}" target="_blank" class="source-pill-naukri" style="text-decoration: none;">Naukri ↗</a>
             </td>
