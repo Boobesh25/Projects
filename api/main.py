@@ -102,6 +102,7 @@ class AuthResponse(BaseModel):
 class ApiKeyRequest(BaseModel):
     api_key: str
     llm_endpoint: Optional[str] = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    provider: Optional[str] = "gemini"
 
 class SaveProfileRequest(BaseModel):
     profile_yaml: str
@@ -348,9 +349,10 @@ async def upload_and_analyze_document(
 
 @app.post("/api/user/validate-key")
 async def validate_api_key(req: ApiKeyRequest):
-    """Validates a Gemini API key live against Google AI Studio."""
+    """Validates an API key live against Google AI Studio or Groq."""
     from core.ai_role_generator import AIRoleGenerator
-    is_valid, msg = AIRoleGenerator.validate_gemini_key(req.api_key)
+    prov = getattr(req, "provider", None) or ("groq" if (req.api_key or "").startswith("gsk_") or "groq" in (req.llm_endpoint or "").lower() else "gemini")
+    is_valid, msg = AIRoleGenerator.validate_llm_key(prov, req.api_key)
     return {"valid": is_valid, "message": msg}
 
 @app.get("/api/profile/ai-roles")
@@ -365,12 +367,14 @@ async def get_ai_roles(
         raise HTTPException(status_code=404, detail="Candidate profile not found.")
     user = await session.scalar(select(User).where(User.id == user_id))
     user_key = user.api_key if user else None
+    user_endpoint = user.llm_endpoint if user else None
+    provider = "groq" if (user_key and user_key.startswith("gsk_")) or (user_endpoint and "groq" in (user_endpoint or "").lower()) else "gemini"
 
     import yaml
     from core.ai_role_generator import AIRoleGenerator
     p_dict = yaml.safe_load(cand.profile_yaml) or {}
     p_dict["verified_skills"] = cand.verified_skills or []
-    roles_info = AIRoleGenerator.generate_roles(p_dict, api_key=user_key)
+    roles_info = AIRoleGenerator.generate_roles(p_dict, api_key=user_key, provider=provider, endpoint=user_endpoint)
     return roles_info
 
 @app.post("/api/profile/save")
@@ -560,6 +564,10 @@ async def analyze_jobs(
     if not profile:
         raise HTTPException(status_code=400, detail="Profile not onboarded. Please upload your document first.")
 
+    user = await session.scalar(select(User).where(User.id == user_id))
+    user_key = user.api_key if user else None
+    user_endpoint = user.llm_endpoint if user else None
+
     from analyzer.matcher import JobMatcher
     cand_domain = JobMatcher.detect_role_domain(profile.professional_title, " ".join(profile.verified_skills or []))
 
@@ -570,7 +578,9 @@ async def analyze_jobs(
         selected_companies=req.selected_companies,
         selected_group=req.selected_group,
         selected_channel=req.selected_channel,
-        candidate_domain=cand_domain
+        candidate_domain=cand_domain,
+        api_key=user_key,
+        llm_endpoint=user_endpoint
     )
 
     return analysis_dict
@@ -641,19 +651,20 @@ async def tailor_prompt_edit(
     user_payload: Dict[str, Any] = Depends(get_current_user_payload),
     session: AsyncSession = Depends(get_db_session)
 ):
-    """Takes existing candidate markdown and modifies/enriches it with Gemini based on user prompt."""
+    """Takes existing candidate markdown and modifies/enriches it with Gemini or Groq based on user prompt."""
     user_id = user_payload["sub"]
     user = await session.scalar(select(User).where(User.id == user_id))
     effective_key = req.api_key or (user.api_key if user else None)
     if not effective_key:
-        raise HTTPException(status_code=400, detail="Gemini API Key required. Configure your personal key in settings or onboarding.")
+        raise HTTPException(status_code=400, detail="API Key required (Google Gemini or Groq). Configure your personal key in settings or onboarding.")
 
     from profile_optimizer import prompt_enhance_document_with_gemini
     updated_md = prompt_enhance_document_with_gemini(
         existing_md=req.existing_markdown,
         prompt_directive=req.prompt_directive,
         job_data=req.job_data,
-        api_key=effective_key
+        api_key=effective_key,
+        endpoint=user.llm_endpoint if user else None
     )
     return {"updated_markdown": updated_md}
 
@@ -663,7 +674,7 @@ async def tailor_analyze(
     user_payload: Dict[str, Any] = Depends(get_current_user_payload),
     session: AsyncSession = Depends(get_db_session)
 ):
-    """Generates tailored profile content and detects framing opportunities with Gemini 2.0 Flash."""
+    """Generates tailored profile content and detects framing opportunities with Gemini or Groq."""
     user_id = user_payload["sub"]
     cand = await session.scalar(select(CandidateProfile).where(CandidateProfile.user_id == user_id))
     if not cand:
@@ -672,7 +683,7 @@ async def tailor_analyze(
     user = await session.scalar(select(User).where(User.id == user_id))
     effective_api_key = req.api_key or (user.api_key if user else None)
     if not effective_api_key:
-        raise HTTPException(status_code=400, detail="Gemini API Key required. Configure your personal key in settings or onboarding.")
+        raise HTTPException(status_code=400, detail="API Key required (Google Gemini or Groq). Configure your personal key in settings or onboarding.")
 
     import yaml
     from profile_optimizer import generate_tailored_profile_with_gemini, detect_skill_equivalences
@@ -683,7 +694,8 @@ async def tailor_analyze(
         candidate_profile=cand_dict,
         job_data=req.job_data,
         user_feedback=req.user_feedback,
-        api_key=effective_api_key
+        api_key=effective_api_key,
+        endpoint=user.llm_endpoint if user else None
     )
 
     target_skills = req.job_data.get("skills_required") or req.job_data.get("tech_stack") or []

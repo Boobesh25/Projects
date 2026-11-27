@@ -12,7 +12,20 @@ def test_validate_gemini_key_format():
 
     is_valid, msg = AIRoleGenerator.validate_gemini_key("invalid_key_123")
     assert is_valid is False
-    assert "aizasy" in msg.lower()
+
+def test_validate_groq_key_format():
+    is_valid, msg = AIRoleGenerator.validate_groq_key("")
+    assert is_valid is False
+    assert "empty" in msg.lower()
+
+    is_valid, msg = AIRoleGenerator.validate_groq_key("invalid_groq_key_123")
+    assert is_valid is False
+
+def test_validate_llm_key_unified():
+    is_valid, msg = AIRoleGenerator.validate_llm_key("gemini", "")
+    assert is_valid is False
+    is_valid, msg = AIRoleGenerator.validate_llm_key("groq", "")
+    assert is_valid is False
 
 def test_deterministic_role_synthesis():
     dummy_profile = {

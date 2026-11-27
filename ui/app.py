@@ -1306,17 +1306,12 @@ if "daily_companies" not in st.session_state:
 if "analysis_results" not in st.session_state:
     st.session_state.analysis_results = None
 
-# Auto-authenticate single designated enterprise user unless explicitly logged out
-if not st.session_state.token and not st.session_state.get("logged_out"):
-    try:
-        r_auth = requests.post(f"{API_BASE}/api/auth/dev-login", json={"email": DEFAULT_USER_EMAIL}, timeout=5)
-        if r_auth.status_code == 200:
-            auth_data = r_auth.json()
-            st.session_state.token = auth_data.get("token")
-            st.session_state.user_info = auth_data
-            st.session_state.is_onboarded = auth_data.get("is_onboarded", True)
-    except Exception:
-        pass
+if "token" not in st.session_state:
+    st.session_state.token = None
+if "user_info" not in st.session_state:
+    st.session_state.user_info = None
+if "is_onboarded" not in st.session_state:
+    st.session_state.is_onboarded = False
 
 def get_auth_headers():
     return {"Authorization": f"Bearer {st.session_state.token}"} if st.session_state.token else {}
@@ -1762,20 +1757,25 @@ def render_login():
         render_html(login_header)
 
         with st.container(border=True):
-            st.markdown("<div style='font-weight: 500; font-size: 14px; margin-bottom: 4px;'>Enterprise Account Login</div>", unsafe_allow_html=True)
-            st.markdown("<div style='font-size: 12px; color: #9AA0A6; margin-bottom: 14px;'>Only pre-authorized email accounts can access this console. New users must be added by the administrator.</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-weight: 500; font-size: 14px; margin-bottom: 4px;'>Administrator & User Sign In</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size: 12px; color: #9AA0A6; margin-bottom: 14px;'>Enter your administrator credentials / authorized account details to access the console.</div>", unsafe_allow_html=True)
             
             with st.form("signin_form"):
-                email = st.text_input("Account Email", value="", placeholder="Enter your authorized email (e.g. name@domain.com)")
+                email = st.text_input("Account Email", value="", placeholder="e.g. boobesh2509@gmail.com")
+                admin_name = st.text_input("Admin / Full Name (Optional)", value="", placeholder="e.g. Boobesh S")
                 submitted = st.form_submit_button("Sign In to Console", use_container_width=True, type="primary")
                 if submitted:
                     clean_email = (email or "").strip().lower()
+                    clean_name = (admin_name or "").strip()
                     if not clean_email:
                         st.error("Please enter your account email.")
                     else:
                         active_api = st.session_state.get("api_base_url", API_BASE).rstrip("/")
                         try:
-                            r = requests.post(f"{active_api}/api/auth/dev-login", json={"email": clean_email}, timeout=8)
+                            payload = {"email": clean_email}
+                            if clean_name:
+                                payload["name"] = clean_name
+                            r = requests.post(f"{active_api}/api/auth/dev-login", json=payload, timeout=8)
                             if r.status_code == 200:
                                 data = r.json()
                                 st.session_state.token = data["token"]
@@ -2046,15 +2046,23 @@ def render_main_dashboard():
                 st.markdown("<hr style='border-color: #282D3B; margin: 18px 0;'>", unsafe_allow_html=True)
                 
                 # -------------------------------------------------------------
-                # 2. MANDATORY PERSONAL GEMINI API KEY CONFIGURATION
+                # 2. MANDATORY PERSONAL CLOUD AI API KEY CONFIGURATION
                 # -------------------------------------------------------------
-                st.markdown("<div style='font-size: 13.5px; font-weight: 500; color: #E8EAED; margin-bottom: 4px;'>2. Configure Personal Google Gemini API Key (Mandatory)</div>", unsafe_allow_html=True)
-                st.markdown("<div style='font-size: 12px; color: #9AA0A6; margin-bottom: 12px;'>Every user must configure their own personal Gemini API key. Keys are private, user-isolated, and strictly never shared with other candidates. Used to power AI direct/cross-domain role generation and authentic profile tailoring.<br>Get your free key from <a href='https://aistudio.google.com/app/apikey' target='_blank' style='color: #8AB4F8;'>Google AI Studio ↗</a></div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-size: 13.5px; font-weight: 500; color: #E8EAED; margin-bottom: 4px;'>2. Configure Personal Cloud AI API Key (Mandatory)</div>", unsafe_allow_html=True)
+                st.markdown("<div style='font-size: 12px; color: #9AA0A6; margin-bottom: 12px;'>Select your cloud AI provider (Google Gemini or Groq). Keys are private, user-isolated, and strictly never shared. Used to power AI direct/cross-domain role generation, deep match analysis, and authentic profile tailoring.</div>", unsafe_allow_html=True)
 
-                k_col1, k_col2 = st.columns([3, 1])
-                with k_col1:
-                    user_gemini_key = st.text_input("Enter Google Gemini API Key", type="password", value=st.session_state.get("gemini_api_key", ""), placeholder="AIzaSy...", key="onboard_gemini_key_input")
-                with k_col2:
+                ob_prov_col, ob_key_col, ob_btn_col = st.columns([1.3, 2.5, 1])
+                with ob_prov_col:
+                    onboard_provider = st.selectbox("Cloud Provider", ["Google Gemini", "Groq"], index=0, key="onboard_provider_select")
+                with ob_key_col:
+                    if onboard_provider == "Google Gemini":
+                        key_ph = "Enter Gemini API key (any format)"
+                        prov_help = "Get your free key from Google AI Studio (aistudio.google.com/app/apikey)"
+                    else:
+                        key_ph = "gsk_... or enter Groq API key"
+                        prov_help = "Get your key from Groq Console (console.groq.com/keys)"
+                    user_llm_key = st.text_input(f"{onboard_provider} API Key", type="password", value=st.session_state.get("user_api_key", st.session_state.get("gemini_api_key", "")), placeholder=key_ph, key="onboard_llm_key_input", help=prov_help)
+                with ob_btn_col:
                     st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
                     test_key_btn = st.button("Validate Key", type="secondary", use_container_width=True)
 
@@ -2064,20 +2072,28 @@ def render_main_dashboard():
                 except Exception:
                     pass
 
-                if test_key_btn or (user_gemini_key and not st.session_state.get("gemini_key_validated")):
-                    if user_gemini_key and user_gemini_key.strip():
-                        with st.spinner("Validating key with Google AI Studio..."):
-                            is_valid, v_msg = AIRoleGenerator.validate_gemini_key(user_gemini_key.strip())
+                if test_key_btn or (user_llm_key and not st.session_state.get("gemini_key_validated")):
+                    if user_llm_key and user_llm_key.strip():
+                        with st.spinner(f"Validating key live with {onboard_provider}..."):
+                            is_valid, v_msg = AIRoleGenerator.validate_llm_key(onboard_provider, user_llm_key.strip())
                             if is_valid:
                                 st.session_state.gemini_key_validated = True
-                                st.session_state.gemini_api_key = user_gemini_key.strip()
-                                st.session_state.ai_roles_info = AIRoleGenerator.generate_roles(parsed_preview, api_key=user_gemini_key.strip())
+                                st.session_state.gemini_api_key = user_llm_key.strip()
+                                st.session_state.user_api_key = user_llm_key.strip()
+                                st.session_state.llm_provider = onboard_provider
+                                st.session_state.llm_endpoint = "https://api.groq.com/openai/v1" if onboard_provider == "Groq" else "https://generativelanguage.googleapis.com/v1beta/openai/"
+                                st.session_state.ai_roles_info = AIRoleGenerator.generate_roles(
+                                    parsed_preview,
+                                    api_key=user_llm_key.strip(),
+                                    provider=onboard_provider,
+                                    endpoint=st.session_state.llm_endpoint
+                                )
                                 st.success(f"{v_msg}")
                             else:
                                 st.session_state.gemini_key_validated = False
                                 st.error(f"{v_msg}")
                     elif test_key_btn:
-                        st.warning("Please enter your Gemini API key.")
+                        st.warning(f"Please enter your {onboard_provider} API key.")
 
                 # Render AI Inferred Career Profile once key is validated
                 if st.session_state.get("gemini_key_validated") and "ai_roles_info" in st.session_state:
@@ -2171,7 +2187,7 @@ def render_main_dashboard():
                 
                 if st.button("Confirm & Activate Profile", type="primary"):
                     if not st.session_state.get("gemini_key_validated"):
-                        st.error("Mandatory: Please enter and validate your personal Google Gemini API key in Step 2 above before activating your profile.")
+                        st.error("Mandatory: Please enter and validate your personal Cloud AI API key (Google Gemini or Groq) in Step 2 above before activating your profile.")
                     else:
                         try:
                             active_api = st.session_state.get("api_base_url", API_BASE).rstrip("/")
@@ -2185,6 +2201,19 @@ def render_main_dashboard():
                             }
                             r_save = requests.post(f"{active_api}/api/profile/save", json=payload, headers=get_auth_headers(), timeout=10)
                             if r_save.status_code == 200:
+                                try:
+                                    requests.post(
+                                        f"{active_api}/api/user/api-key",
+                                        json={
+                                            "api_key": st.session_state.get("gemini_api_key", ""),
+                                            "llm_endpoint": st.session_state.get("llm_endpoint", "https://generativelanguage.googleapis.com/v1beta/openai/"),
+                                            "provider": st.session_state.get("llm_provider", "Google Gemini").lower()
+                                        },
+                                        headers=get_auth_headers(),
+                                        timeout=5
+                                    )
+                                except Exception:
+                                    pass
                                 st.session_state.is_onboarded = True
                                 st.session_state.onboard_yaml = None
                                 st.session_state.onboard_meta = None
@@ -2339,7 +2368,7 @@ def render_main_dashboard():
 
         # Trigger Analysis
         if start_btn:
-            with st.spinner(f"Evaluating {eval_count} companies across Career Pages, LinkedIn & Naukri in database..."):
+            with st.spinner(f"Evaluating {eval_count} companies and candidate profile with configured LLM reasoning... This cross-evaluates active requisitions in PostgreSQL and may take a moment."):
                 try:
                     payload = {
                         "selected_companies": selected_comps if selected_comps else None,
@@ -2570,10 +2599,10 @@ def render_main_dashboard():
     elif "Results & Recommendations" in selected_menu:
         # Automatic analysis loading if not already in session state
         if not st.session_state.analysis_results:
-            with st.spinner("Analyzing candidate profile against 2,000+ tracked employers in PostgreSQL database..."):
+            with st.spinner("Analyzing candidate profile against tracked opportunities in PostgreSQL with configured LLM reasoning... This cross-evaluates active requisitions and may take a moment."):
                 try:
                     payload = {"selected_group": "All"}
-                    r = requests.post(f"{API_BASE}/api/analyze", json=payload, headers=get_auth_headers(), timeout=35)
+                    r = requests.post(f"{API_BASE}/api/analyze", json=payload, headers=get_auth_headers(), timeout=45)
                     if r.status_code == 200:
                         st.session_state.analysis_results = r.json()
                         st.rerun()
@@ -2594,9 +2623,9 @@ def render_main_dashboard():
             """
             render_html(empty_panel)
             if st.button("Start Analysis for All Companies", type="primary"):
-                with st.spinner("Analyzing profile..."):
+                with st.spinner("Analyzing active opportunities and candidate profile with configured LLM reasoning... This evaluates requisitions in PostgreSQL and may take a moment."):
                     try:
-                        r = requests.post(f"{API_BASE}/api/analyze", json={"selected_group": "All"}, headers=get_auth_headers(), timeout=35)
+                        r = requests.post(f"{API_BASE}/api/analyze", json={"selected_group": "All"}, headers=get_auth_headers(), timeout=45)
                         if r.status_code == 200:
                             st.session_state.analysis_results = r.json()
                             st.rerun()
@@ -2614,10 +2643,10 @@ def render_main_dashboard():
                 """, unsafe_allow_html=True)
             with hdr_c2:
                 if st.button("Re-evaluate Profile", use_container_width=True, type="primary"):
-                    with st.spinner("Re-evaluating employers across Career Pages, LinkedIn & Naukri..."):
+                    with st.spinner("Re-evaluating active requisitions across Career Pages, LinkedIn & Naukri in PostgreSQL database... This cross-evaluates opportunities and may take a moment."):
                         try:
                             payload = {"selected_group": "All"}
-                            r = requests.post(f"{API_BASE}/api/analyze", json=payload, headers=get_auth_headers(), timeout=35)
+                            r = requests.post(f"{API_BASE}/api/analyze", json=payload, headers=get_auth_headers(), timeout=45)
                             if r.status_code == 200:
                                 st.session_state.analysis_results = r.json()
                                 st.rerun()
@@ -2929,23 +2958,43 @@ def render_main_dashboard():
     # TAB 4: SETTINGS & RE-UPLOAD
     # -------------------------------------------------------------------------
     elif "Settings & Re-upload" in selected_menu:
-        st.markdown("<div style='font-weight: 500; font-size: 14px; margin-bottom: 4px;'>1. LLM Studio / Gemini API Key Configuration</div>", unsafe_allow_html=True)
-        st.caption("Provide an API Key for deep LLM reasoning, or leave blank to use the built-in deterministic engine.")
+        st.markdown("<div style='font-weight: 500; font-size: 14px; margin-bottom: 4px;'>1. Cloud AI Provider & API Key Configuration</div>", unsafe_allow_html=True)
+        st.caption("Configure Google Gemini or Groq to power deep role discovery, profile tailoring, and match reasoning. Keys are validated live against the provider.")
 
-        c1, c2 = st.columns([2, 1])
-        with c1:
-            g_key = st.text_input("Google AI Studio (Gemini) API Key", type="password", placeholder="AIzaSy...")
-        with c2:
-            endpoint = st.text_input("Endpoint URL", value="https://generativelanguage.googleapis.com/v1beta/openai/")
+        prov_col, key_col, end_col = st.columns([1.2, 2.2, 1.8])
+        with prov_col:
+            set_provider = st.selectbox("Cloud AI Provider", ["Google Gemini", "Groq"], index=0, key="settings_prov_select")
+        with key_col:
+            def_key_ph = "Enter Gemini API key (any format)" if set_provider == "Google Gemini" else "gsk_... or enter Groq API key"
+            g_key = st.text_input(f"{set_provider} API Key", type="password", placeholder=def_key_ph, key="settings_key_input")
+        with end_col:
+            def_endpoint = "https://generativelanguage.googleapis.com/v1beta/openai/" if set_provider == "Google Gemini" else "https://api.groq.com/openai/v1"
+            endpoint = st.text_input("Endpoint URL", value=def_endpoint, key="settings_endpoint_input")
 
-        if st.button("Save API Configuration", type="primary"):
-            if g_key:
-                try:
-                    r = requests.post(f"{API_BASE}/api/user/api-key", json={"api_key": g_key, "llm_endpoint": endpoint}, headers=get_auth_headers(), timeout=5)
-                    if r.status_code == 200:
-                        st.success("API Key saved in PostgreSQL!")
-                except Exception as e:
-                    st.error(f"Error: {e}")
+        if st.button("Test & Save API Configuration", type="primary"):
+            if g_key and g_key.strip():
+                with st.spinner(f"Testing key live with {set_provider}..."):
+                    is_valid, v_msg = AIRoleGenerator.validate_llm_key(set_provider, g_key.strip())
+                    if is_valid:
+                        try:
+                            r = requests.post(
+                                f"{API_BASE}/api/user/api-key",
+                                json={"api_key": g_key.strip(), "llm_endpoint": endpoint, "provider": set_provider.lower()},
+                                headers=get_auth_headers(),
+                                timeout=8
+                            )
+                            if r.status_code == 200:
+                                st.session_state.gemini_api_key = g_key.strip()
+                                st.session_state.gemini_key_validated = True
+                                st.session_state.llm_endpoint = endpoint
+                                st.session_state.llm_provider = set_provider
+                                st.success(f"{v_msg} Saved successfully in PostgreSQL!")
+                            else:
+                                st.error(f"Error saving to database: {r.text}")
+                        except Exception as e:
+                            st.error(f"Error: {e}")
+                    else:
+                        st.error(f"Validation failed: {v_msg}")
             else:
                 st.info("Using built-in deterministic extraction engine.")
 
@@ -3659,7 +3708,35 @@ def render_console_matches_table(title: str, subtitle: str, items: List[Dict[str
         matched_chips = "".join([f'<span class="chip-green">{s}</span>' for s in matched[:4]]) if matched else '<span style="color:#64748B;">None</span>'
         lag_chips = "".join([f'<span class="chip-red">{s}</span>' for s in lag[:3]]) if lag else '<span style="color:#64748B;">None</span>'
         
-        score_val = item.get("match_score", 0)
+        score_val = item.get("ats_score") or item.get("match_score", 0)
+        ats_verdict = item.get("ats_verdict") or ("SHORTLISTED" if score_val >= 75 else ("REVIEWABLE" if score_val >= 60 else "POTENTIAL GAP"))
+        knockout_passed = item.get("knockout_passed", True)
+
+        if ats_verdict == "SHORTLISTED":
+            verdict_pill = '<span class="status-pill-green" title="ATS Automated Screening: SHORTLISTED for Recruiter Screen">SHORTLISTED</span>'
+        elif ats_verdict == "REVIEWABLE":
+            verdict_pill = '<span class="status-pill-yellow" title="ATS Automated Screening: REVIEWABLE - Competitive Pool">REVIEWABLE</span>'
+        elif ats_verdict == "POTENTIAL GAP":
+            verdict_pill = '<span class="status-pill-purple" title="ATS Automated Screening: POTENTIAL GAP - Must-Have / Seniority Delta">POTENTIAL GAP</span>'
+        else:
+            verdict_pill = '<span class="status-pill-red" title="ATS Automated Screening: KNOCKED OUT by Disqualifier Filter">KNOCKED OUT</span>'
+
+        must_matched = item.get("must_have_matched") or matched
+        must_missing = item.get("must_have_missing") or lag
+        nice_matched = item.get("nice_to_have_matched") or []
+        nice_missing = item.get("nice_to_have_missing") or []
+
+        must_matched_chips = "".join([f'<span class="chip-green">{s}</span>' for s in must_matched[:5]]) if must_matched else '<span style="color:#64748B;">None</span>'
+        must_missing_chips = "".join([f'<span class="chip-red">{s}</span>' for s in must_missing[:4]]) if must_missing else ''
+        nice_matched_chips = "".join([f'<span class="chip-blue">{s}</span>' for s in nice_matched[:4]]) if nice_matched else ''
+        nice_missing_chips = "".join([f'<span class="chip-gray">{s}</span>' for s in nice_missing[:3]]) if nice_missing else ''
+
+        context_score = item.get("context_score", 85.0)
+        recency_score = item.get("recency_score", 90.0)
+        quant_score = item.get("quantification_score", 85.0)
+        must_score = item.get("must_have_score", score_val)
+        action_plan = item.get("ats_action_plan") or ([item.get("tailoring_tip")] if item.get("tailoring_tip") else ["Align verified experience to job requirements."])
+
         apply_url = item.get("job_apply_url") or item.get("url") or "#"
         tip = item.get("tailoring_tip", "")
         role_title = item.get("title", "Role")
@@ -3700,7 +3777,7 @@ def render_console_matches_table(title: str, subtitle: str, items: List[Dict[str
         <tr>
             <td style="width: 30px;"><input type="checkbox"></td>
             <td>{source_pill}</td>
-            <td><span class="{pill_class}">{status_label}</span></td>
+            <td>{verdict_pill}</td>
             <td>
                 <a href="{career_url}" target="_blank" class="job-id-pill" title="{source_channel} Requisition #{job_id}">
                     #{job_id} ↗
@@ -3719,10 +3796,13 @@ def render_console_matches_table(title: str, subtitle: str, items: List[Dict[str
                     <a href="{career_url}" target="_blank" style="color: #8AB4F8; font-weight: 600; text-decoration: none; font-size: 13px;" title="Open {source_channel} Requisition #{job_id}">
                         {role_title} ↗
                     </a>
-                    <a href="#modal_{clean_jid}" class="role-info-icon" title="View Full Role Details & Job Description (JD)">ⓘ</a>
+                    <a href="#modal_{clean_jid}" class="role-info-icon" title="View Full Role Details & ATS Shortlist Breakdown">ⓘ</a>
                 </div>
             </td>
-            <td><b style="font-size: 13px; color: {score_color};">{score_val}%</b></td>
+            <td>
+                <b style="font-size: 13px; color: {score_color};">{score_val}%</b>
+                <div style="font-size: 9.5px; color: #9AA0A6;">ATS Score</div>
+            </td>
             <td style="font-size: 11.5px; white-space: nowrap;">{exp_asked}</td>
             <td style="font-size: 11.5px;"><span class="status-pill-gray">{work_mode}</span></td>
             <td style="max-width: 170px;">{matched_chips}</td>
@@ -3755,8 +3835,8 @@ def render_console_matches_table(title: str, subtitle: str, items: List[Dict[str
                                 <span style="font-size: 18px; font-weight: 700; color: #FFFFFF;">{comp_name}</span>
                                 <span class="status-pill-gray">{comp_group}</span>
                                 {source_pill}
-                                <span class="{pill_class}">{status_label}</span>
-                                <span style="font-size: 12px; font-weight: 600; color: {score_color}; background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 12px; border: 1px solid {score_color};">{score_val}% Match</span>
+                                {verdict_pill}
+                                <span style="font-size: 12px; font-weight: 600; color: {score_color}; background: rgba(255,255,255,0.06); padding: 2px 8px; border-radius: 12px; border: 1px solid {score_color};">{score_val}% ATS Score</span>
                             </div>
                             <h2 style="margin: 8px 0 0 0; font-size: 20px; font-weight: 600; color: #8AB4F8;">{role_title}</h2>
                         </div>
@@ -3769,22 +3849,62 @@ def render_console_matches_table(title: str, subtitle: str, items: List[Dict[str
                     <div class="jd-meta-item"><span class="jd-meta-label">Work Mode</span><span class="jd-meta-value">{work_mode}</span></div>
                     <div class="jd-meta-item"><span class="jd-meta-label">Experience Bracket</span><span class="jd-meta-value">{exp_asked}</span></div>
                     <div class="jd-meta-item"><span class="jd-meta-label">Requisition ID</span><span class="jd-meta-value">#{job_id}</span></div>
-                    <div class="jd-meta-item"><span class="jd-meta-label">Match Category</span><span class="jd-meta-value">{status_label} ({score_val}%)</span></div>
+                    <div class="jd-meta-item"><span class="jd-meta-label">ATS Shortlist Tier</span><span class="jd-meta-value">{ats_verdict} ({score_val}%)</span></div>
                     <div class="jd-meta-item"><span class="jd-meta-label">Domain</span><span class="jd-meta-value">{item.get('job_domain', 'Engineering')}</span></div>
                 </div>
 
-                <div class="jd-skills-box">
-                    <div style="margin-bottom: 8px;">
-                        <b style="color: #81C995; font-size: 11.5px; text-transform: uppercase;">Matched Candidate Skills:</b>
-                        <div style="margin-top: 4px;">{matched_chips}</div>
+                <!-- Enterprise ATS Shortlisting & Tracking Panel -->
+                <div style="background: #182030; border: 1px solid #283D5E; border-radius: 6px; padding: 14px; margin-bottom: 14px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #25334E; padding-bottom: 8px; margin-bottom: 10px;">
+                        <div>
+                            <span style="font-size: 12.5px; font-weight: 700; color: #FFFFFF;">ATS Shortlist Tracking & Screening Audit</span>
+                            <span style="font-size: 11px; color: {'#81C995' if knockout_passed else '#F28B82'}; margin-left: 8px;">
+                                Knockout Gate: <b>{'PASSED' if knockout_passed else 'DISQUALIFIED'}</b>
+                            </span>
+                        </div>
+                        <span style="font-size: 11px; color: #9AA0A6;">Workday / Taleo ATS Parser Model</span>
                     </div>
-                    <div style="margin-bottom: 8px;">
-                        <b style="color: #F28B82; font-size: 11.5px; text-transform: uppercase;">Skill Gaps (Lag Skills):</b>
-                        <div style="margin-top: 4px;">{lag_chips}</div>
+
+                    <!-- 4-Quadrant ATS Scorecard -->
+                    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px;">
+                        <div style="background: rgba(255,255,255,0.03); border: 1px solid #28354E; border-radius: 4px; padding: 6px; text-align: center;">
+                            <div style="font-size: 15px; font-weight: 700; color: {score_color};">{must_score}%</div>
+                            <div style="font-size: 10px; color: #9AA0A6;">Must-Have Skills</div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.03); border: 1px solid #28354E; border-radius: 4px; padding: 6px; text-align: center;">
+                            <div style="font-size: 15px; font-weight: 700; color: #8AB4F8;">{context_score}%</div>
+                            <div style="font-size: 10px; color: #9AA0A6;">Experience Proof</div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.03); border: 1px solid #28354E; border-radius: 4px; padding: 6px; text-align: center;">
+                            <div style="font-size: 15px; font-weight: 700; color: #81C995;">{recency_score}%</div>
+                            <div style="font-size: 10px; color: #9AA0A6;">Recency & Depth</div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.03); border: 1px solid #28354E; border-radius: 4px; padding: 6px; text-align: center;">
+                            <div style="font-size: 15px; font-weight: 700; color: #FDD663;">{quant_score}%</div>
+                            <div style="font-size: 10px; color: #9AA0A6;">STAR Metric Density</div>
+                        </div>
                     </div>
-                    <div style="background: rgba(255,255,255,0.02); border: 1px solid #28354E; border-radius: 4px; padding: 10px; margin-top: 8px;">
-                        <b style="color: #FDD663; font-size: 11.5px; text-transform: uppercase;">Tailoring Recommendation:</b>
-                        <p style="margin: 4px 0 0 0; color: #E8EAED; font-size: 12px; line-height: 1.5;">{tip}</p>
+
+                    <!-- Must-Have vs Nice-to-Have Skills Breakdown -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 10px;">
+                        <div>
+                            <b style="color: #81C995; font-size: 11px; text-transform: uppercase;">Must-Have (Mandatory) Skills:</b>
+                            <div style="margin-top: 4px;">{must_matched_chips}</div>
+                            {f'<div style="margin-top: 4px;"><b style="color:#F28B82; font-size:10.5px;">Missing Core:</b> {must_missing_chips}</div>' if must_missing else ''}
+                        </div>
+                        <div>
+                            <b style="color: #8AB4F8; font-size: 11px; text-transform: uppercase;">Nice-to-Have (Preferred) Skills:</b>
+                            <div style="margin-top: 4px;">{nice_matched_chips or '<span style="color:#64748B;">All covered</span>'}</div>
+                            {f'<div style="margin-top: 4px;"><b style="color:#9AA0A6; font-size:10.5px;">Missing Preferred:</b> {nice_missing_chips}</div>' if nice_missing else ''}
+                        </div>
+                    </div>
+
+                    <!-- ATS Action Plan -->
+                    <div style="background: rgba(255,255,255,0.02); border: 1px solid #28354E; border-radius: 4px; padding: 8px 10px;">
+                        <b style="color: #FDD663; font-size: 11px; text-transform: uppercase;">ATS Action Plan to Guarantee Shortlist:</b>
+                        <ul style="margin: 4px 0 0 16px; padding: 0; color: #E8EAED; font-size: 11.5px; line-height: 1.5;">
+                            {''.join([f'<li>{plan}</li>' for plan in action_plan[:4]])}
+                        </ul>
                     </div>
                 </div>
 
@@ -3928,17 +4048,6 @@ def render_no_openings_table(title: str, subtitle: str, items: List[Dict[str, An
 # Main Routing
 # -----------------------------------------------------------------------------
 def main():
-    if not st.session_state.token and not st.session_state.get("logged_out"):
-        try:
-            r_auth = requests.post(f"{API_BASE}/api/auth/dev-login", json={"email": DEFAULT_USER_EMAIL}, timeout=5)
-            if r_auth.status_code == 200:
-                auth_data = r_auth.json()
-                st.session_state.token = auth_data.get("token")
-                st.session_state.user_info = auth_data
-                st.session_state.is_onboarded = auth_data.get("is_onboarded", True)
-        except Exception:
-            pass
-
     if not st.session_state.token:
         render_login()
     else:

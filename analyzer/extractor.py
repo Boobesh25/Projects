@@ -46,10 +46,22 @@ class CareerPageExtractor:
                 return gh_job
 
         # Tier 1B: Lever API check
-        if "jobs.lever.co" in domain:
+        if "jobs.lever.co" in domain or "lever.co" in url:
             lever_job = cls._extract_lever(url)
             if lever_job:
                 return lever_job
+
+        # Tier 1C: SmartRecruiters API check
+        if "smartrecruiters.com" in domain or "smartrecruiters.com" in url:
+            sr_job = cls._extract_smartrecruiters(url)
+            if sr_job:
+                return sr_job
+
+        # Tier 1D: Ashby API check
+        if "ashbyhq.com" in domain or "ashbyhq.com" in url:
+            ashby_job = cls._extract_ashby(url)
+            if ashby_job:
+                return ashby_job
 
         # Tier 2 & 3: Generic Web Page via HTML + JSON-LD + Clean Markdown
         return cls._extract_generic_html(url)
@@ -173,6 +185,88 @@ class CareerPageExtractor:
                         must_have_skills=tokens[:8],
                         nice_to_have_skills=tokens[8:]
                     )
+        except Exception:
+            pass
+        return None
+
+    @classmethod
+    def _extract_smartrecruiters(cls, url: str) -> Optional[JobPosting]:
+        try:
+            match = re.search(r"smartrecruiters\.com/([^/]+)/([a-zA-Z0-9\-]+)", url)
+            if match:
+                company, job_id = match.groups()
+                api_url = f"https://api.smartrecruiters.com/v1/companies/{company}/postings/{job_id}"
+                resp = requests.get(api_url, headers=cls.HEADERS, timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    title = data.get("name", "")
+                    loc_obj = data.get("location", {})
+                    loc = f"{loc_obj.get('city', '')}, {loc_obj.get('country', '')}".strip(", ") or "Unspecified"
+                    jd_obj = data.get("jobDescription", {})
+                    parts = []
+                    for sec in ["companyDescription", "jobDescription", "qualifications", "additionalInformation"]:
+                        txt = jd_obj.get(sec, {}).get("text", "")
+                        if txt:
+                            if BeautifulSoup:
+                                parts.append(BeautifulSoup(txt, "html.parser").get_text(separator="\n"))
+                            else:
+                                parts.append(re.sub(r'<[^>]+>', ' ', txt).strip())
+                    clean_text = "\n\n".join(parts)
+                    min_exp, max_exp = cls._parse_experience_years(clean_text)
+                    tokens = cls._find_tech_tokens(clean_text)
+                    return JobPosting(
+                        url=url,
+                        company=company.capitalize(),
+                        title=title,
+                        location=loc,
+                        job_id=str(job_id),
+                        posted_date=data.get("releasedDate"),
+                        min_experience_years=min_exp,
+                        max_experience_years=max_exp,
+                        raw_markdown=clean_text,
+                        tech_stack=tokens,
+                        must_have_skills=tokens[:8],
+                        nice_to_have_skills=tokens[8:]
+                    )
+        except Exception:
+            pass
+        return None
+
+    @classmethod
+    def _extract_ashby(cls, url: str) -> Optional[JobPosting]:
+        try:
+            match = re.search(r"ashbyhq\.com/([^/]+)/([a-zA-Z0-9\-]+)", url)
+            if match:
+                company, job_id = match.groups()
+                api_url = f"https://api.ashbyhq.com/posting-api/job-board/{company}"
+                resp = requests.get(api_url, headers=cls.HEADERS, timeout=10)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for item in data.get("jobs", []):
+                        if str(item.get("id")) == job_id or item.get("jobUrl") == url:
+                            title = item.get("title", "")
+                            loc = item.get("location", "Remote")
+                            desc_html = item.get("descriptionHtml") or item.get("descriptionPlain") or ""
+                            if BeautifulSoup:
+                                clean_text = BeautifulSoup(desc_html, "html.parser").get_text(separator="\n")
+                            else:
+                                clean_text = re.sub(r'<[^>]+>', ' ', desc_html).strip()
+                            min_exp, max_exp = cls._parse_experience_years(clean_text)
+                            tokens = cls._find_tech_tokens(clean_text)
+                            return JobPosting(
+                                url=url,
+                                company=company.capitalize(),
+                                title=title,
+                                location=loc,
+                                job_id=str(job_id),
+                                posted_date=item.get("publishedAt"),
+                                min_experience_years=min_exp,
+                                max_experience_years=max_exp,
+                                raw_markdown=clean_text,
+                                tech_stack=tokens,
+                                must_have_skills=tokens[:8],
+                                nice_to_have_skills=tokens[8:]
+                            )
         except Exception:
             pass
         return None

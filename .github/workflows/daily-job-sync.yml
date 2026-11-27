@@ -1,9 +1,11 @@
-name: Daily Autonomous Job Ingestion Sync
+name: Autonomous Job Ingestion Sync
 
 on:
-  schedule:
-    # 02:00 AM IST daily (20:30 UTC)
-    - cron: '30 20 * * *'
+  push:
+    paths:
+      - 'scripts/cloud_sync_worker.py'
+      - 'core/job_sync_service.py'
+      - '.github/workflows/daily-job-sync.yml'
   workflow_dispatch:
 
 permissions:

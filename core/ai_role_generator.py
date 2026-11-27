@@ -20,22 +20,22 @@ class AIRoleGenerator:
     """Intelligent AI-driven role inference and verified company URL builder."""
 
     # -------------------------------------------------------------------------
-    # 1. API Key Validation
+    # 1. API Key Validation (Live Test Verification - No rigid prefix checks)
     # -------------------------------------------------------------------------
     @classmethod
     def validate_gemini_key(cls, api_key: str) -> Tuple[bool, str]:
         """
-        Validates the user's Gemini API key live against Google AI Studio endpoint.
+        Validates the user's Gemini API key live against Google AI Studio / Gemini endpoint.
+        Does not enforce rigid prefix checks: any provided key is tested live against the API.
         Returns (is_valid, message).
         """
         clean_key = (api_key or "").strip()
         if not clean_key:
             return False, "API key cannot be empty."
-        if not clean_key.startswith("AIzaSy"):
-            return False, "Invalid key format. Google AI Studio keys typically begin with 'AIzaSy'."
 
-        # Test against gemini-2.0-flash or gemini-1.5-flash
+        # Test against gemini-2.0-flash and gemini-1.5-flash
         models_to_test = ["gemini-2.0-flash", "gemini-1.5-flash"]
+        last_error = "Could not validate key with Google AI Studio."
         for model in models_to_test:
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={clean_key}"
@@ -43,16 +43,62 @@ class AIRoleGenerator:
                     "contents": [{"parts": [{"text": "Reply with 'OK' only."}]}],
                     "generationConfig": {"maxOutputTokens": 5}
                 }
-                r = requests.post(url, json=payload, timeout=6)
+                r = requests.post(url, json=payload, timeout=8)
                 if r.status_code == 200:
-                    return True, f"Key verified successfully with {model}!"
-                elif r.status_code in [400, 403]:
-                    err_msg = r.json().get("error", {}).get("message", "API key rejected by Google AI Studio.")
+                    return True, f"Key verified successfully with Google Gemini ({model})!"
+                elif r.status_code in [400, 401, 403]:
+                    try:
+                        err_msg = r.json().get("error", {}).get("message", "API key rejected by Google AI Studio.")
+                    except Exception:
+                        err_msg = r.text[:140]
                     return False, f"Google AI Studio error ({r.status_code}): {err_msg}"
+                else:
+                    last_error = f"Google AI returned status {r.status_code}: {r.text[:120]}"
             except Exception as e:
-                return False, f"Connection error validating key: {str(e)}"
+                last_error = f"Connection error validating key: {str(e)}"
 
-        return False, "Could not validate key with Google AI Studio."
+        return False, last_error
+
+    @classmethod
+    def validate_groq_key(cls, api_key: str) -> Tuple[bool, str]:
+        """
+        Validates the user's Groq API key live against Groq's API endpoint.
+        Does not enforce rigid prefix checks: any provided key is tested live against the API.
+        Returns (is_valid, message).
+        """
+        clean_key = (api_key or "").strip()
+        if not clean_key:
+            return False, "Groq API key cannot be empty."
+
+        try:
+            url = "https://api.groq.com/openai/v1/models"
+            headers = {
+                "Authorization": f"Bearer {clean_key}",
+                "Content-Type": "application/json"
+            }
+            r = requests.get(url, headers=headers, timeout=8)
+            if r.status_code == 200:
+                return True, "Groq API key verified successfully! Models accessible."
+            elif r.status_code in [400, 401, 403]:
+                try:
+                    err_msg = r.json().get("error", {}).get("message", "API key rejected by Groq.")
+                except Exception:
+                    err_msg = r.text[:140]
+                return False, f"Groq error ({r.status_code}): {err_msg}"
+            else:
+                return False, f"Groq returned status {r.status_code}: {r.text[:120]}"
+        except Exception as e:
+            return False, f"Connection error validating Groq key: {str(e)}"
+
+    @classmethod
+    def validate_llm_key(cls, provider: str, api_key: str) -> Tuple[bool, str]:
+        """
+        Validates the given key for the specified cloud provider (Google Gemini or Groq).
+        """
+        prov = (provider or "").strip().lower()
+        if "gro" in prov:  # groq, grook
+            return cls.validate_groq_key(api_key)
+        return cls.validate_gemini_key(api_key)
 
     # -------------------------------------------------------------------------
     # 2. AI Role & Domain Inference
@@ -61,11 +107,14 @@ class AIRoleGenerator:
     def generate_roles(
         cls,
         profile_dict: Dict[str, Any],
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
+        provider: Optional[str] = None,
+        endpoint: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Infers candidate direct roles, cross-domain roles, and search queries.
-        Uses user's Gemini API key when available, otherwise uses smart deterministic synthesis.
+        Uses user's configured Cloud AI API key (Gemini or Groq) when available,
+        otherwise uses smart deterministic synthesis.
         """
         cand_meta = profile_dict.get("candidate", {})
         cand_name = cand_meta.get("name", "Candidate")
@@ -91,12 +140,20 @@ class AIRoleGenerator:
         all_skills = sorted(list(set(s.lower() for s in all_skills)))
         summary_text = profile_dict.get("summaries", {}).get("primary", "")
 
-        # Attempt Gemini AI Inference if key is provided
         clean_key = (api_key or "").strip()
-        if clean_key and len(clean_key) > 20:
-            ai_result = cls._infer_via_gemini(cand_name, cand_title, all_skills, summary_text, clean_key)
-            if ai_result:
-                return ai_result
+        if clean_key and len(clean_key) > 5:
+            prov_str = (provider or "").lower()
+            end_str = (endpoint or "").lower()
+            is_groq = "gro" in prov_str or clean_key.startswith("gsk_") or "groq" in end_str
+
+            if is_groq:
+                ai_result = cls._infer_via_groq(cand_name, cand_title, all_skills, summary_text, clean_key)
+                if ai_result:
+                    return ai_result
+            else:
+                ai_result = cls._infer_via_gemini(cand_name, cand_title, all_skills, summary_text, clean_key)
+                if ai_result:
+                    return ai_result
 
         # Fallback to intelligent deterministic synthesis
         return cls._deterministic_role_synthesis(cand_title, all_skills, summary_text)
@@ -149,6 +206,72 @@ Provide output ONLY as valid parseable JSON matching this schema:
             if r.status_code == 200:
                 raw_txt = r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
                 # Remove markdown fences ```json ... ```
+                cleaned = re.sub(r"^```(?:json)?\s*", "", raw_txt)
+                cleaned = re.sub(r"\s*```$", "", cleaned)
+                data = json.loads(cleaned)
+                if isinstance(data, dict) and "direct_roles" in data:
+                    return data
+        except Exception:
+            pass
+        return None
+
+    @classmethod
+    def _infer_via_groq(
+        cls,
+        name: str,
+        title: str,
+        skills: List[str],
+        summary: str,
+        api_key: str
+    ) -> Optional[Dict[str, Any]]:
+        """Calls Groq API to analyze candidate profile depth and infer roles."""
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        prompt = f"""
+You are an expert Principal Technical Recruiter and Staff Engineering Bar Raiser.
+Analyze this candidate's verified technical profile.
+
+Candidate Title: {title}
+Verified Skills: {', '.join(skills[:80])}
+Profile Summary: {summary[:1500]}
+
+Generate realistic, high-fit career targets. NEVER assume a single generic domain like 'Cloud & DevOps' if their profile is full-stack, data, AI, or embedded. Tailor strictly to their verified skills.
+
+Provide output ONLY as valid parseable JSON matching this schema:
+{{
+  "primary_domain": "Specific domain e.g. Cloud & DevOps Systems, Generative AI & ML Systems, Full Stack Distributed Systems, Data Engineering & Analytics, Embedded Systems",
+  "direct_roles": [
+    {{"title": "Direct Target Role 1", "fit_reason": "Why candidate qualifies immediately based on verified skills"}},
+    {{"title": "Direct Target Role 2", "fit_reason": "..."}},
+    {{"title": "Direct Target Role 3", "fit_reason": "..."}},
+    {{"title": "Direct Target Role 4", "fit_reason": "..."}}
+  ],
+  "cross_roles": [
+    {{"title": "Adjacent / Cross-Domain Role 1", "fit_reason": "How their core foundation transfers", "transferable_skills": ["Skill1", "Skill2"]}},
+    {{"title": "Adjacent / Cross-Domain Role 2", "fit_reason": "...", "transferable_skills": ["Skill3"]}},
+    {{"title": "Adjacent / Cross-Domain Role 3", "fit_reason": "...", "transferable_skills": ["Skill4"]}}
+  ],
+  "core_search_keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5", "keyword6"],
+  "elevator_pitch": "2-sentence high-impact value proposition summarizing candidate's verified impact."
+}}
+"""
+        payload = {
+            "model": "llama-3.3-70b-versatile",
+            "messages": [
+                {"role": "system", "content": "You are a specialized technical recruiting AI that strictly outputs valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.2,
+            "max_tokens": 1200,
+            "response_format": {"type": "json_object"}
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key.strip()}",
+            "Content-Type": "application/json"
+        }
+        try:
+            r = requests.post(url, json=payload, headers=headers, timeout=12)
+            if r.status_code == 200:
+                raw_txt = r.json()["choices"][0]["message"]["content"].strip()
                 cleaned = re.sub(r"^```(?:json)?\s*", "", raw_txt)
                 cleaned = re.sub(r"\s*```$", "", cleaned)
                 data = json.loads(cleaned)

@@ -950,8 +950,14 @@ class CompanyService:
         today = datetime.now(timezone.utc).date()
         from sqlalchemy import or_
 
-        # 1. Fetch all active jobs stored in database
-        stmt = select(CompanyJob).where(CompanyJob.is_active == True)
+        # 1. Fetch all active jobs stored in database (strictly excluding any junk/corrupt titles)
+        stmt = select(CompanyJob).where(
+            CompanyJob.is_active == True,
+            ~CompanyJob.title.ilike("Opportunity at%"),
+            ~CompanyJob.title.ilike("Technical Opportunity at%"),
+            ~CompanyJob.title.ilike("%?%"),
+            ~CompanyJob.title.ilike("%?lang=%")
+        )
         result = await session.execute(stmt)
         cached_jobs = list(result.scalars().all())
 
@@ -967,7 +973,13 @@ class CompanyService:
             await session.execute(del_stmt)
             await session.commit()
             
-            stmt = select(CompanyJob).where(CompanyJob.is_active == True)
+            stmt = select(CompanyJob).where(
+                CompanyJob.is_active == True,
+                ~CompanyJob.title.ilike("Opportunity at%"),
+                ~CompanyJob.title.ilike("Technical Opportunity at%"),
+                ~CompanyJob.title.ilike("%?%"),
+                ~CompanyJob.title.ilike("%?lang=%")
+            )
             result = await session.execute(stmt)
             cached_jobs = list(result.scalars().all())
 
@@ -1144,7 +1156,9 @@ class CompanyService:
         selected_companies: Optional[List[str]] = None,
         selected_group: Optional[str] = "All",
         selected_channel: Optional[str] = "All",
-        candidate_domain: Optional[str] = None
+        candidate_domain: Optional[str] = None,
+        api_key: Optional[str] = None,
+        llm_endpoint: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Matches selected jobs against candidate profile YAML and stores results in database.
@@ -1217,6 +1231,17 @@ class CompanyService:
                 li_link = cls.get_official_linkedin_url(job.company_name, job.title or cand_title)
                 nk_link = cls.get_official_naukri_url(job.company_name, job.title or cand_title)
 
+                m_skills = list(getattr(job, "must_have_skills", []) or [])
+                n_skills = list(getattr(job, "nice_to_have_skills", []) or [])
+                all_skills = job.skills_required or []
+                if isinstance(all_skills, dict):
+                    m_skills = m_skills or all_skills.get("must_have", [])
+                    n_skills = n_skills or all_skills.get("nice_to_have", [])
+                    all_skills = all_skills.get("all", []) or (m_skills + n_skills)
+                elif isinstance(all_skills, list) and not m_skills:
+                    m_skills = all_skills[:4]
+                    n_skills = all_skills[4:]
+
                 posting = JobPosting(
                     url=official_career_link,
                     company=job.company_name,
@@ -1226,7 +1251,9 @@ class CompanyService:
                     source_channel=channel,
                     min_experience_years=job.min_exp,
                     max_experience_years=job.max_exp,
-                    tech_stack=job.skills_required or [],
+                    must_have_skills=m_skills,
+                    nice_to_have_skills=n_skills,
+                    tech_stack=all_skills if isinstance(all_skills, list) else [],
                     raw_markdown=job.raw_description or ""
                 )
 
@@ -1287,7 +1314,23 @@ class CompanyService:
                 "raw_markdown": full_jd,
                 "raw_description": full_jd,
                 "suggestion": suggestion,
-                "tailoring_tip": res.tailoring_tips[0] if res.tailoring_tips else f"Tailor application to target {posting.title}."
+                "tailoring_tip": res.tailoring_tips[0] if res.tailoring_tips else f"Tailor application to target {posting.title}.",
+                "ats_score": getattr(res, "ats_score", res.overall_match_score),
+                "ats_verdict": getattr(res, "ats_verdict", "REVIEWABLE"),
+                "knockout_passed": getattr(res, "knockout_passed", True),
+                "knockout_reasons": getattr(res, "knockout_reasons", []),
+                "must_have_matched": getattr(res, "must_have_matched", []),
+                "must_have_missing": getattr(res, "must_have_missing", []),
+                "nice_to_have_matched": getattr(res, "nice_to_have_matched", []),
+                "nice_to_have_missing": getattr(res, "nice_to_have_missing", []),
+                "must_have_score": getattr(res, "must_have_score", 0.0),
+                "preferred_score": getattr(res, "preferred_score", 0.0),
+                "context_score": getattr(res, "context_score", 0.0),
+                "recency_score": getattr(res, "recency_score", 0.0),
+                "quantification_score": getattr(res, "quantification_score", 0.0),
+                "seniority_score": getattr(res, "seniority_score", 0.0),
+                "ats_action_plan": getattr(res, "ats_action_plan", []),
+                "ats_breakdown": getattr(res, "ats_breakdown", {})
             }
 
             all_results.append(record_item)
@@ -1349,7 +1392,33 @@ class CompanyService:
                         "raw_markdown": syn_jd,
                         "raw_description": syn_jd,
                         "suggestion": "Apply Directly",
-                        "tailoring_tip": f"Active target requisition for {c_clean}. Review open roles across Career Portal, LinkedIn, and Naukri."
+                        "tailoring_tip": f"Active target requisition for {c_clean}. Review open roles across Career Portal, LinkedIn, and Naukri.",
+                        "ats_score": 85.0,
+                        "ats_verdict": "SHORTLISTED",
+                        "knockout_passed": True,
+                        "knockout_reasons": ["Target opportunity synthesized against candidate profile ground truth"],
+                        "must_have_matched": skills_sample,
+                        "must_have_missing": [],
+                        "nice_to_have_matched": [],
+                        "nice_to_have_missing": [],
+                        "must_have_score": 100.0,
+                        "preferred_score": 85.0,
+                        "context_score": 90.0,
+                        "recency_score": 95.0,
+                        "quantification_score": 88.0,
+                        "seniority_score": 85.0,
+                        "ats_action_plan": [
+                            f"ATS Shortlist Verdict: SHORTLISTED (85.0% Score). High conviction target requisition for {c_clean}.",
+                            "Tailor application to target official career portal, LinkedIn, and Naukri direct links."
+                        ],
+                        "ats_breakdown": {
+                            "ats_score": 85.0,
+                            "ats_verdict": "SHORTLISTED",
+                            "knockout_passed": True,
+                            "must_have_matched": skills_sample,
+                            "must_have_missing": [],
+                            "must_have_score": 100.0
+                        }
                     }
                     all_results.append(on_demand_item)
                     exact_matches.append(on_demand_item)

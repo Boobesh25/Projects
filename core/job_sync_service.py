@@ -75,7 +75,8 @@ class TechRoleClassifier:
     NON_TECH_PATTERNS = [
         r"\brecruiter\b", r"\bsourcer\b", r"\btalent acquisition\b", r"\bhuman resources\b",
         r"\bhr\s*(?:generalist|manager|executive|specialist|business partner|bp)\b",
-        r"\bsales\s*(?:representative|rep|manager|executive|director|agent|lead)\b",
+        r"\bsales\s*(?:representative|rep|manager|executive|director|agent|lead|consultant)\b",
+        r"\bretail\b", r"\bstore\s*(?:manager|associate)\b", r"\bcashier\b",
         r"\bbusiness development\b", r"\baccount executive\b", r"\bsdr\b", r"\bbdr\b",
         r"\bmarketing\s*(?:manager|specialist|lead|executive|intern)\b",
         r"\bcontent\s*(?:writer|creator|marketing)\b", r"\bcopywriter\b",
@@ -84,9 +85,12 @@ class TechRoleClassifier:
         r"\baccountant\b", r"\bbookkeeper\b", r"\btax\s*(?:analyst|consultant|manager)\b",
         r"\baudit\s*(?:associate|senior|manager)\b", r"\bpayroll\s*(?:specialist|lead)\b",
         r"\bloan\s*officer\b", r"\bcredit\s*analyst\b", r"\bwealth\s*manager\b",
-        r"\bbranch\s*manager\b", r"\bcashier\b", r"\bstore\s*manager\b",
-        r"\breceptionist\b", r"\boffice\s*manager\b", r"\bexecutive\s*assistant\b",
-        r"\bcustomer\s*support\s*representative\b", r"\bcall\s*center\b"
+        r"\bbranch\s*manager\b", r"\breceptionist\b", r"\boffice\s*manager\b",
+        r"\bexecutive\s*assistant\b", r"\bcustomer\s*support\b", r"\bcall\s*center\b",
+        r"\bpatient\s*(?:care)?\s*(?:technician|assistant)\b", r"\bmaintenance\s*scheduler\b",
+        r"\bopportunity\s+at\b", r"\btechnical\s+opportunity\s+at\b", r"^\?lang=", r"\?domain=",
+        r"\bchronik\b", r"\bpanel\s*talk\b", r"\bbilder\b", r"\bnurse\b", r"\bphysician\b",
+        r"\bdriver\b", r"\bwarehouse\b"
     ]
 
     # Modern & emerging keywords that signal high-priority technical engineering roles
@@ -636,6 +640,79 @@ class JobSyncEngine:
                                     "posted_date": p_date or utc_now_naive(),
                                     "is_active": True
                                 })
+
+                    elif ats == "smartrecruiters":
+                        url = f"https://api.smartrecruiters.com/v1/companies/{slug}/postings?limit=100"
+                        r = requests.get(url, headers=cls.HEADERS, timeout=8)
+                        if r.status_code == 200:
+                            data = r.json()
+                            for item in data.get("content", []):
+                                title = item.get("name", "")
+                                is_tech, _ = TechRoleClassifier.is_technical_role(title)
+                                if not is_tech:
+                                    continue
+                                loc_obj = item.get("location", {})
+                                loc_name = f"{loc_obj.get('city', '')}, {loc_obj.get('country', '')}".strip(", ")
+                                is_allowed, norm_loc, norm_mode = GeoLocationFilter.filter_geography(
+                                    loc_name, "Remote" if "remote" in loc_name.lower() else "On-site"
+                                )
+                                if not is_allowed:
+                                    continue
+                                item_id = item.get("id")
+                                jd_url = f"https://jobs.smartrecruiters.com/{slug}/{item_id}"
+                                res_list.append({
+                                    "job_id": f"SR-{slug.upper()}-{item_id}",
+                                    "company_name": comp,
+                                    "company_group": "Enterprise",
+                                    "source_channel": "Career Page",
+                                    "title": title,
+                                    "location": norm_loc,
+                                    "work_mode": norm_mode,
+                                    "experience_text": "2 - 5 Years",
+                                    "min_exp": 2.0,
+                                    "max_exp": 5.0,
+                                    "url": jd_url,
+                                    "raw_description": f"{title} at {comp}. Official SmartRecruiters requisition {item_id}.",
+                                    "posted_date": utc_now_naive(),
+                                    "is_active": True
+                                })
+
+                    elif ats == "ashby":
+                        url = f"https://api.ashbyhq.com/posting-api/job-board/{slug}"
+                        r = requests.get(url, headers=cls.HEADERS, timeout=8)
+                        if r.status_code == 200:
+                            data = r.json()
+                            for item in data.get("jobs", []):
+                                title = item.get("title", "")
+                                is_tech, _ = TechRoleClassifier.is_technical_role(title)
+                                if not is_tech:
+                                    continue
+                                loc_name = item.get("location", "Remote")
+                                is_allowed, norm_loc, norm_mode = GeoLocationFilter.filter_geography(
+                                    loc_name, "Remote" if "remote" in loc_name.lower() else "On-site"
+                                )
+                                if not is_allowed:
+                                    continue
+                                item_id = item.get("id")
+                                jd_url = item.get("jobUrl") or f"https://jobs.ashbyhq.com/{slug}/{item_id}"
+                                desc_plain = item.get("descriptionPlain", "")
+                                exp_text, min_e, max_e = ExperienceParser.parse_experience(title, desc_plain)
+                                res_list.append({
+                                    "job_id": f"ASHBY-{slug.upper()}-{item_id}",
+                                    "company_name": comp,
+                                    "company_group": "AI_Startup",
+                                    "source_channel": "Career Page",
+                                    "title": title,
+                                    "location": norm_loc,
+                                    "work_mode": norm_mode,
+                                    "experience_text": exp_text,
+                                    "min_exp": min_e,
+                                    "max_exp": max_e,
+                                    "url": jd_url,
+                                    "raw_description": desc_plain[:8000] if desc_plain else f"{title} at {comp}.",
+                                    "posted_date": utc_now_naive(),
+                                    "is_active": True
+                                })
                 except Exception as ex:
                     logger.warning(f"Failed crawling ATS {comp} ({slug}): {ex}")
             return res_list
@@ -905,6 +982,118 @@ class JobSyncEngine:
         jobs = await asyncio.to_thread(_fetch_sync)
         return jobs
 
+    TECH_TOKENS = [
+        "python", "fastapi", "flask", "django", "langgraph", "langchain", "llamaindex",
+        "mcp", "react", "rag", "pgvector", "qdrant", "chromadb", "pinecone", "redis",
+        "kafka", "docker", "kubernetes", "argocd", "opentelemetry", "openlit", "gemini",
+        "aws bedrock", "azure openai", "postgresql", "mysql", "sql", "pandas", "numpy",
+        "agentic ai", "prompt engineering", "embeddings", "git", "gitops", "aws", "azure",
+        "gcp", "google cloud", "machine learning", "deep learning", "nlp", "golang", "java",
+        "c++", "c#", "rust", "typescript", "javascript", "linux", "ci/cd", "terraform",
+        "rest api", "graphql", "microservices", "airflow", "spark", "hadoop", "elasticsearch",
+        "solidity", "pytorch", "tensorflow", "snowflake", "databricks", "scikit-learn",
+        "devops", "finops", "sre", "cloud", "apis", "node.js", "angular", "vue"
+    ]
+
+    @classmethod
+    def segregate_skills_from_jd(
+        cls,
+        title: str,
+        description: str,
+        existing_skills: Optional[List[str]] = None
+    ) -> Tuple[List[str], List[str], List[str]]:
+        """
+        Partitions JD requirements into:
+        - must_have_skills: mandatory core technical requirements
+        - nice_to_have_skills: secondary / preferred qualifications
+        - all_skills: complete normalized tech stack
+        """
+        desc_clean = (description or "").lower()
+        title_clean = (title or "").lower()
+
+        must_have: List[str] = []
+        nice_to_have: List[str] = []
+
+        req_pattern = r"(?:minimum qualifications|basic qualifications|required qualifications|requirements|what you(?:'ll)? need|must have|core requirements)(.*?)(?:preferred qualifications|nice to have|bonus|desired|what we offer|responsibilities|\Z)"
+        pref_pattern = r"(?:preferred qualifications|nice to have|bonus points|desired skills|good to have)(.*?)(?:responsibilities|benefits|about us|\Z)"
+
+        req_match = re.search(req_pattern, desc_clean, re.DOTALL)
+        pref_match = re.search(pref_pattern, desc_clean, re.DOTALL)
+
+        req_corpus = req_match.group(1) if req_match else desc_clean[:2500]
+        pref_corpus = pref_match.group(1) if pref_match else ""
+
+        found_skills: Set[str] = set()
+        for token in cls.TECH_TOKENS:
+            if re.search(rf"\b{re.escape(token)}\b", title_clean):
+                must_have.append(token)
+                found_skills.add(token)
+            elif pref_corpus and re.search(rf"\b{re.escape(token)}\b", pref_corpus):
+                nice_to_have.append(token)
+                found_skills.add(token)
+            elif re.search(rf"\b{re.escape(token)}\b", req_corpus):
+                must_have.append(token)
+                found_skills.add(token)
+
+        if existing_skills and isinstance(existing_skills, list):
+            for s in existing_skills:
+                s_clean = str(s).lower().strip()
+                if s_clean and s_clean not in found_skills:
+                    if len(must_have) < 5:
+                        must_have.append(s_clean)
+                    else:
+                        nice_to_have.append(s_clean)
+                    found_skills.add(s_clean)
+
+        for kw in ["python", "java", "golang", "react", "cloud", "aws", "azure", "docker", "kubernetes", "sql", "snowflake"]:
+            if re.search(rf"\b{kw}\b", title_clean) and kw not in must_have:
+                must_have.insert(0, kw)
+                found_skills.add(kw)
+
+        if not must_have and found_skills:
+            all_sorted = list(found_skills)
+            must_have = all_sorted[:4]
+            nice_to_have = all_sorted[4:]
+
+        if not must_have and not found_skills:
+            # Fallback based on job title semantics for listings with short stub descriptions
+            if any(k in title_clean for k in ["data engineer", "data platform", "etl"]):
+                must_have = ["data engineering", "sql", "python", "etl"]
+                nice_to_have = ["spark", "cloud", "data pipelines"]
+            elif any(k in title_clean for k in ["ai", "machine learning", "ml", "deep learning", "nlp", "llm", "genai"]):
+                must_have = ["machine learning", "python", "artificial intelligence", "algorithms"]
+                nice_to_have = ["deep learning", "pytorch", "cloud"]
+            elif any(k in title_clean for k in ["devops", "sre", "platform", "infrastructure", "systems", "cloud"]):
+                must_have = ["devops", "cloud", "linux", "ci/cd"]
+                nice_to_have = ["docker", "kubernetes", "terraform"]
+            elif any(k in title_clean for k in ["frontend", "ui", "web", "react", "angular"]):
+                must_have = ["frontend", "javascript", "react", "html/css"]
+                nice_to_have = ["typescript", "rest api", "ui design"]
+            elif any(k in title_clean for k in ["backend", "server", "microservice"]):
+                must_have = ["backend", "python", "rest api", "sql"]
+                nice_to_have = ["microservices", "docker", "distributed systems"]
+            elif any(k in title_clean for k in ["full stack", "fullstack"]):
+                must_have = ["full stack", "javascript", "python", "react"]
+                nice_to_have = ["docker", "sql", "rest api"]
+            elif any(k in title_clean for k in ["security", "cyber", "infosec"]):
+                must_have = ["cybersecurity", "security architecture", "vulnerability assessment"]
+                nice_to_have = ["cloud security", "compliance", "linux"]
+            elif any(k in title_clean for k in ["embedded", "firmware", "hardware", "iot"]):
+                must_have = ["embedded systems", "c++", "c", "rtos"]
+                nice_to_have = ["linux", "microcontrollers", "firmware"]
+            elif any(k in title_clean for k in ["qa", "sdet", "test", "quality"]):
+                must_have = ["test automation", "qa", "python", "test strategies"]
+                nice_to_have = ["ci/cd", "api testing", "selenium"]
+            elif any(k in title_clean for k in ["architect", "principal", "staff"]):
+                must_have = ["software architecture", "system design", "distributed systems", "apis"]
+                nice_to_have = ["cloud", "microservices", "technical leadership"]
+            else:
+                must_have = ["software engineering", "data structures", "system design", "problem solving"]
+                nice_to_have = ["git", "ci/cd", "agile"]
+
+        all_skills = list(dict.fromkeys(must_have + nice_to_have))
+        return must_have, nice_to_have, all_skills
+
     # -------------------------------------------------------------------------
     # Database Persistence & Pruning
     # -------------------------------------------------------------------------
@@ -917,7 +1106,8 @@ class JobSyncEngine:
     ) -> int:
         """
         Upserts crawled jobs into `company_jobs`.
-        Avoids duplicates based on URL or (company_name, title).
+        Strictly filters out non-technical roles, placeholder titles, hex hashes, and foreign on-site jobs.
+        Segregates skills into must_have_skills and nice_to_have_skills.
         Returns number of newly inserted jobs.
         """
         if not job_dicts:
@@ -933,6 +1123,26 @@ class JobSyncEngine:
                 continue
             title_clean = (j.get("title", "") or "").strip()[:500]
             comp_clean = (j.get("company_name", "") or "").strip()[:250]
+
+            # 1. Reject placeholder, corrupt, or hex titles
+            t_low = title_clean.lower()
+            if not title_clean or len(title_clean) < 4 or "?" in title_clean or any(p in t_low for p in ["opportunity at", "technical opportunity", "?lang=", "?domain="]):
+                logger.info(f"[JOB_SYNC_REJECT_INVALID_TITLE] '{title_clean}' at {comp_clean} - {url_clean}")
+                continue
+
+            words = title_clean.split()
+            short_words = sum(1 for w in words if len(w) <= 2)
+            if len(words) >= 4 and (short_words / len(words)) >= 0.5:
+                logger.info(f"[JOB_SYNC_REJECT_HEX_TITLE] '{title_clean}' at {comp_clean}")
+                continue
+
+            # 2. Strict Technical Role Verification
+            raw_desc = j.get("raw_description", "")
+            is_tech, tech_reason = TechRoleClassifier.is_technical_role(title_clean, raw_desc)
+            if not is_tech:
+                logger.info(f"[JOB_SYNC_REJECT_NON_TECH] '{title_clean}' at {comp_clean}: {tech_reason}")
+                continue
+
             # Sanitize Naukri URLs so they never expire or hit expJD=true
             if "naukri.com" in url_clean.lower() and ("job-listings-" in url_clean or "expjd=true" in url_clean.lower()):
                 from core.company_crawler import CompanyService
@@ -941,6 +1151,17 @@ class JobSyncEngine:
             loc_clean = (j.get("location", "Remote") or "Remote").strip()[:1000]
             mode_clean = (j.get("work_mode", "Remote") or "Remote").strip()[:60]
             exp_text_clean = (j.get("experience_text", "2 - 5 Years") or "2 - 5 Years").strip()[:120]
+
+            # 3. Geographic Scope & Mode Validation
+            geo_ok, loc_clean, mode_clean = GeoLocationFilter.filter_geography(loc_clean, mode_clean, raw_desc)
+            if not geo_ok:
+                logger.info(f"[JOB_SYNC_REJECT_FOREIGN_ONSITE] '{title_clean}' at {comp_clean} ({loc_clean})")
+                continue
+
+            # 4. Segregate skills into Must-Have vs Nice-to-Have
+            m_skills, n_skills, all_skills = cls.segregate_skills_from_jd(
+                title_clean, raw_desc, j.get("skills_required") or j.get("skills")
+            )
 
             p_dt = j.get("posted_date")
             if p_dt and getattr(p_dt, "tzinfo", None) is not None:
@@ -969,6 +1190,12 @@ class JobSyncEngine:
                     existing.source_channel = "Career Page"
                 if j.get("raw_description"):
                     existing.raw_description = j.get("raw_description")
+                if m_skills:
+                    existing.must_have_skills = m_skills
+                if n_skills:
+                    existing.nice_to_have_skills = n_skills
+                if all_skills:
+                    existing.skills_required = all_skills
                 session.add(existing)
             else:
                 new_job = CompanyJob(
@@ -984,8 +1211,10 @@ class JobSyncEngine:
                     min_exp=j.get("min_exp", 2.0),
                     max_exp=j.get("max_exp", 5.0),
                     url=url_clean,
-                    skills_required=[],
-                    raw_description=j.get("raw_description", ""),
+                    skills_required=all_skills,
+                    must_have_skills=m_skills,
+                    nice_to_have_skills=n_skills,
+                    raw_description=raw_desc,
                     posted_date=p_dt,
                     is_active=True,
                     fetched_date=today_date

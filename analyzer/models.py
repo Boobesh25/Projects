@@ -47,22 +47,42 @@ class MatchResult(BaseModel):
     recommendation: str
     tailoring_tips: List[str]
 
+    # Enterprise ATS Shortlisting & Tracking Intelligence
+    ats_score: float = 0.0  # 0.0 - 100.0%
+    ats_verdict: str = "REVIEWABLE"  # "SHORTLISTED", "REVIEWABLE", "POTENTIAL GAP", "KNOCKED OUT"
+    knockout_passed: bool = True
+    knockout_reasons: List[str] = Field(default_factory=list)
+    must_have_matched: List[str] = Field(default_factory=list)
+    must_have_missing: List[str] = Field(default_factory=list)
+    nice_to_have_matched: List[str] = Field(default_factory=list)
+    nice_to_have_missing: List[str] = Field(default_factory=list)
+    must_have_score: float = 0.0
+    preferred_score: float = 0.0
+    context_score: float = 0.0  # Skills validated in actual work experience
+    recency_score: float = 0.0  # Recency in latest positions
+    quantification_score: float = 0.0  # STAR / Metric quantification density
+    seniority_score: float = 0.0  # Role hierarchy alignment
+    ats_action_plan: List[str] = Field(default_factory=list)
+    ats_breakdown: Dict[str, Any] = Field(default_factory=dict)
+
     def format_terminal_summary(self) -> str:
-        status_icon = "[STRONG MATCH (>= 75%)]" if self.is_high_match else ("[MODERATE (60-74%)]" if self.overall_match_score >= 60 else "[LOW MATCH (< 60%)]")
+        status_icon = f"[{self.ats_verdict} ({self.ats_score}% ATS)]"
         lines = [
             f"{'='*60}",
             f"Job: {self.job_title} @ {self.company}",
             f"Location: {self.location} | Ref ID: {self.job_id or 'N/A'}",
-            f"Overall Match Score: {self.overall_match_score}% [{status_icon}]",
+            f"ATS Shortlist Verdict: {self.ats_verdict} (Score: {self.ats_score}%)",
+            f"Knockout Filter: {'PASSED' if self.knockout_passed else 'FAILED'}",
             f"Experience Alignment: {'Matched' if self.experience_fit else 'Mismatch'} ({self.exp_required_text})",
-            f"Matched Skills ({len(self.matched_skills)}): {', '.join(self.matched_skills[:8])}{'...' if len(self.matched_skills) > 8 else ''}",
-            f"Missing / Unmatched ({len(self.missing_skills)}): {', '.join(self.missing_skills) if self.missing_skills else 'None'}",
+            f"Must-Have Skills ({len(self.must_have_matched)}/{len(self.must_have_matched)+len(self.must_have_missing)}): {', '.join(self.must_have_matched) if self.must_have_matched else 'None'}",
+            f"Missing Must-Haves: {', '.join(self.must_have_missing) if self.must_have_missing else 'None'}",
+            f"Experience Context Proof: {self.context_score}% | STAR Metric Density: {self.quantification_score}%",
             f"Recommendation: {self.recommendation}",
         ]
-        if self.tailoring_tips:
-            lines.append("Tailoring Suggestions:")
-            for tip in self.tailoring_tips:
-                lines.append(f"  * {tip}")
+        if self.ats_action_plan:
+            lines.append("ATS Action Plan to Guarantee Shortlisting:")
+            for plan in self.ats_action_plan:
+                lines.append(f"  * {plan}")
         lines.append(f"{'='*60}")
         return "\n".join(lines)
 

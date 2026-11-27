@@ -234,10 +234,11 @@ def generate_tailored_profile_with_gemini(
     candidate_profile: Dict[str, Any],
     job_data: Dict[str, Any],
     user_feedback: Optional[str] = None,
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    endpoint: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Invokes Gemini 2.0 Flash to tailor candidate document content to the target JD.
+    Invokes Gemini 2.0 Flash or Groq Llama-3.3 to tailor candidate document content to the target JD.
     Falls back to deterministic synthesis if API key is not configured.
     """
     cand_meta = candidate_profile.get("candidate", {})
@@ -257,18 +258,18 @@ def generate_tailored_profile_with_gemini(
     matched, framing, missing = detect_skill_equivalences(set(skills), target_skills)
 
     if api_key and api_key.strip():
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key.strip()}"
-            
-            framing_context = "\n".join([
-                f"- Candidate has '{f['candidate_skill']}' -> JD specifies '{f['jd_skill']}'. Explicitly expose '{f['jd_skill']}' in tailored bullets!"
-                for f in framing
-            ])
+        clean_key = api_key.strip()
+        is_groq = clean_key.startswith("gsk_") or (endpoint and "groq" in endpoint.lower())
 
-            user_instruction_block = f"\nUser Directive / Custom Feedback:\n{user_feedback.strip()}" if user_feedback else ""
+        framing_context = "\n".join([
+            f"- Candidate has '{f['candidate_skill']}' -> JD specifies '{f['jd_skill']}'. Explicitly expose '{f['jd_skill']}' in tailored bullets!"
+            for f in framing
+        ])
 
-            prompt = f"""
-You are an expert Executive Resume Writer and ATS Optimization Specialist.
+        user_instruction_block = f"\nUser Directive / Custom Feedback:\n{user_feedback.strip()}" if user_feedback else ""
+
+        prompt = f"""
+You are an expert Executive Document Writer and ATS Optimization Specialist.
 Target Position: {job_title} at {company}
 Candidate Name: {name} (Current: {cand_title}, {exp_years} Years Experience)
 Candidate Verified Skills: {', '.join(skills)}
@@ -297,16 +298,39 @@ Output JSON only matching this schema:
   "recommended_skills_display": ["...", "..."]
 }}
 """
-            payload = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"response_mime_type": "application/json", "temperature": 0.15}
-            }
-            r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=25)
-            if r.status_code == 200:
-                raw_json = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-                return json.loads(raw_json)
-        except Exception:
-            pass
+        if is_groq:
+            try:
+                g_url = "https://api.groq.com/openai/v1/chat/completions"
+                g_payload = {
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [
+                        {"role": "system", "content": "You are an expert Executive Document Writer and ATS Optimization Specialist. You strictly output valid JSON."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.15,
+                    "max_tokens": 1500,
+                    "response_format": {"type": "json_object"}
+                }
+                g_headers = {"Authorization": f"Bearer {clean_key}", "Content-Type": "application/json"}
+                r = requests.post(g_url, json=g_payload, headers=g_headers, timeout=25)
+                if r.status_code == 200:
+                    raw_json = r.json()["choices"][0]["message"]["content"]
+                    return json.loads(raw_json)
+            except Exception:
+                pass
+        else:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={clean_key}"
+                payload = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"response_mime_type": "application/json", "temperature": 0.15}
+                }
+                r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=25)
+                if r.status_code == 200:
+                    raw_json = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+                    return json.loads(raw_json)
+            except Exception:
+                pass
 
     # Deterministic High-Quality Fallback Synthesis
     framing_explanations = []
@@ -683,11 +707,13 @@ def prompt_enhance_document_with_gemini(
     existing_md: str,
     prompt_directive: str,
     job_data: Dict[str, Any],
-    api_key: Optional[str] = None
+    api_key: Optional[str] = None,
+    endpoint: Optional[str] = None
 ) -> str:
     """
     Enriches the candidate's EXISTING real Markdown document based on prompt directive and job data.
     Preserves authentic facts, real companies, projects, and factual metrics.
+    Supports both Google Gemini and Groq LLM inference.
     """
     job_title = job_data.get("title", "Target Role")
     company = job_data.get("company_name") or job_data.get("company") or "Target Company"
@@ -697,9 +723,8 @@ def prompt_enhance_document_with_gemini(
     effective_api_key = (api_key or "").strip() or os.getenv("GEMINI_API_KEY", "").strip()
 
     if effective_api_key:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={effective_api_key}"
-            system_instruction = f"""
+        is_groq = effective_api_key.startswith("gsk_") or (endpoint and "groq" in endpoint.lower())
+        system_instruction = f"""
 You are an expert Executive Document Specialist and ATS Resume Optimization Engineer.
 Target Position: {job_title} at {company}
 Target Tech Stack: {', '.join(target_skills)}
@@ -722,27 +747,57 @@ CRITICAL RULES:
    - Do NOT rewrite or delete other sections unless specifically asked.
 3. Output ONLY the updated complete raw Markdown document without markdown code fences (no ```markdown).
 """
-            payload = {
-                "contents": [
-                    {"parts": [{"text": f"EXISTING CANDIDATE DOCUMENT:\n\n{existing_md}\n\nUSER PROMPT DIRECTIVE:\n{prompt_directive}\n\nPlease update the existing document accordingly."}]}
-                ],
-                "systemInstruction": {"parts": [{"text": system_instruction}]},
-                "generationConfig": {"temperature": 0.2}
-            }
-            r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=35)
-            if r.status_code == 200:
-                text = r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-                if text.startswith("```"):
-                    lines = text.split("\n")
-                    if lines[0].startswith("```"):
-                        lines = lines[1:]
-                    if lines and lines[-1].startswith("```"):
-                        lines = lines[:-1]
-                    text = "\n".join(lines).strip()
-                if text:
-                    return text
-        except Exception:
-            pass
+        if is_groq:
+            try:
+                g_url = "https://api.groq.com/openai/v1/chat/completions"
+                g_payload = {
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": f"EXISTING CANDIDATE DOCUMENT:\n\n{existing_md}\n\nUSER PROMPT DIRECTIVE:\n{prompt_directive}\n\nPlease update the existing document accordingly."}
+                    ],
+                    "temperature": 0.2,
+                    "max_tokens": 3000
+                }
+                g_headers = {"Authorization": f"Bearer {effective_api_key}", "Content-Type": "application/json"}
+                r = requests.post(g_url, json=g_payload, headers=g_headers, timeout=35)
+                if r.status_code == 200:
+                    text = r.json()["choices"][0]["message"]["content"].strip()
+                    if text.startswith("```"):
+                        lines = text.split("\n")
+                        if lines[0].startswith("```"):
+                            lines = lines[1:]
+                        if lines and lines[-1].startswith("```"):
+                            lines = lines[:-1]
+                        text = "\n".join(lines).strip()
+                    if text:
+                        return text
+            except Exception:
+                pass
+        else:
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={effective_api_key}"
+                payload = {
+                    "contents": [
+                        {"parts": [{"text": f"EXISTING CANDIDATE DOCUMENT:\n\n{existing_md}\n\nUSER PROMPT DIRECTIVE:\n{prompt_directive}\n\nPlease update the existing document accordingly."}]}
+                    ],
+                    "systemInstruction": {"parts": [{"text": system_instruction}]},
+                    "generationConfig": {"temperature": 0.2}
+                }
+                r = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=35)
+                if r.status_code == 200:
+                    text = r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+                    if text.startswith("```"):
+                        lines = text.split("\n")
+                        if lines[0].startswith("```"):
+                            lines = lines[1:]
+                        if lines and lines[-1].startswith("```"):
+                            lines = lines[:-1]
+                        text = "\n".join(lines).strip()
+                    if text:
+                        return text
+            except Exception:
+                pass
 
     # Deterministic Intelligent Parser (Fallback without API key)
     return _intelligent_deterministic_edit(existing_md, prompt_directive, target_skills, company)

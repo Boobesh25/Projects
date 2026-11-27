@@ -84,6 +84,8 @@ class CompanyJob(Base):
     max_exp = Column(Float, default=3.0)
     url = Column(String(1024), nullable=False)
     skills_required = Column(JSON, default=list)
+    must_have_skills = Column(JSON, default=list)
+    nice_to_have_skills = Column(JSON, default=list)
     raw_description = Column(Text, nullable=True)
     posted_date = Column(DateTime, nullable=True)  # Official posting date or calculated
     is_active = Column(Boolean, default=True, index=True)
@@ -127,5 +129,20 @@ class SyncJobState(Base):
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)
+
+
+class CompanyPortal(Base):
+    __tablename__ = "company_portals"
+
+    id = Column(String(64), primary_key=True, default=generate_uuid)
+    company_name = Column(String(256), index=True, nullable=False, unique=True)
+    domain = Column(String(256), nullable=True)
+    category = Column(String(128), index=True, default="General")
+    career_url = Column(String(1024), nullable=False)
+    detected_ats = Column(String(64), default="Custom / In-House")
+    discovery_method = Column(String(64), default="Smart Entity Probing")
+    is_active = Column(Boolean, default=True, index=True)
+    last_verified_at = Column(DateTime, default=utc_now_naive)
+    created_at = Column(DateTime, default=utc_now_naive)
 
 

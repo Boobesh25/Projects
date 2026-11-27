@@ -466,3 +466,100 @@ class JobDiscoveryEngine:
         # When querying public search endpoints or ATS endpoints, we extract the company slug directly:
         # e.g., 'https://boards-api.greenhouse.io/v1/boards/{slug}/jobs'
         return postings
+
+    @classmethod
+    def fetch_from_database(
+        cls,
+        keywords: Optional[str] = None,
+        location: Optional[str] = "India",
+        work_mode: Optional[str] = None,
+        limit: int = 100,
+        db_url: Optional[str] = None
+    ) -> List[JobPosting]:
+        """
+        Directly queries normalized jobs from PostgreSQL company_jobs.
+        Constructs validated canonical JobPosting models ready for candidate matching.
+        """
+        import os
+        import json
+        import psycopg2
+
+        conn_urls = [
+            db_url,
+            os.environ.get("DATABASE_URL"),
+            "postgresql://postgres:postgres@localhost:5432/career_portal",
+            "postgresql://postgres:MySecretPassword123@127.0.0.1:5432/career_portal"
+        ]
+        conn = None
+        for u in conn_urls:
+            if not u:
+                continue
+            try:
+                conn = psycopg2.connect(u)
+                break
+            except Exception:
+                continue
+
+        if not conn:
+            return []
+
+        cur = conn.cursor()
+        query = """
+            SELECT job_id, company_name, title, location, work_mode, 
+                   experience_text, min_exp, max_exp, url, skills_required, 
+                   raw_description, source_channel, posted_date
+            FROM company_jobs
+            WHERE is_active = TRUE
+        """
+        params = []
+        if keywords:
+            query += " AND (title ILIKE %s OR raw_description ILIKE %s OR skills_required::text ILIKE %s)"
+            kw_param = f"%{keywords}%"
+            params.extend([kw_param, kw_param, kw_param])
+        if location and location.lower() != "all":
+            query += " AND (location ILIKE %s OR work_mode = 'Remote')"
+            params.append(f"%{location}%")
+        if work_mode and work_mode.lower() != "all":
+            query += " AND work_mode ILIKE %s"
+            params.append(f"%{work_mode}%")
+
+        query += " ORDER BY created_at DESC LIMIT %s;"
+        params.append(limit)
+
+        cur.execute(query, tuple(params))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        postings: List[JobPosting] = []
+        for r in rows:
+            (j_id, company, title, loc, w_mode, exp_text, min_e, max_e, 
+             url, skills_raw, raw_desc, source_channel, posted_date) = r
+
+            tech_stack = []
+            if skills_raw:
+                if isinstance(skills_raw, list):
+                    tech_stack = skills_raw
+                elif isinstance(skills_raw, str):
+                    try:
+                        parsed = json.loads(skills_raw)
+                        if isinstance(parsed, list):
+                            tech_stack = parsed
+                    except Exception:
+                        tech_stack = [s.strip() for s in skills_raw.split(",") if s.strip()]
+
+            postings.append(JobPosting(
+                url=url or f"https://career.{company.lower().replace(' ', '')}.com",
+                company=company,
+                title=title,
+                location=f"{loc} ({w_mode})" if w_mode and w_mode not in loc else loc,
+                job_id=j_id,
+                source_channel=source_channel or "Career Page",
+                posted_date=str(posted_date) if posted_date else "Recent",
+                min_experience_years=float(min_e) if min_e is not None else None,
+                max_experience_years=float(max_e) if max_e is not None else None,
+                raw_markdown=raw_desc or f"Role: {title} at {company}. Direct career opening.",
+                tech_stack=tech_stack
+            ))
+
+        return postings

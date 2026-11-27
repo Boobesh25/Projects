@@ -19,6 +19,7 @@ build/
 credentials.json
 token.json
 client_secrets.json
+vertex_sa_key.json
 
 # IDE
 .vscode/
