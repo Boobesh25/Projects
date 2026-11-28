@@ -1085,7 +1085,7 @@ async def crawl_portal_with_crawl4ai_async(portal, max_jobs=None):
                         if (btn && !btn.disabled && btn.offsetParent !== null) btn.click();
                     } catch(e) {}
                     """
-                    portal_res = await crawler.arun(url=current_page_url, js_code=js_scroll_and_load_more)
+                    portal_res = await crawler.arun(url=current_page_url, js_code=js_scroll_and_load_more, page_timeout=15000)
                     if not portal_res or not portal_res.success:
                         continue
 
@@ -1153,7 +1153,7 @@ async def crawl_portal_with_crawl4ai_async(portal, max_jobs=None):
         target_list = candidate_urls if max_jobs is None else candidate_urls[:max_jobs]
         for target_url, target_title in target_list:
             try:
-                job_res = await crawler.arun(url=target_url)
+                job_res = await crawler.arun(url=target_url, page_timeout=15000)
                 if not job_res or not job_res.success or not job_res.markdown:
                     continue
                 md_content = job_res.markdown.strip()
@@ -1524,7 +1524,7 @@ def run_full_sync():
     cur.close()
     conn.close()
 
-    worker_threads = 6 if CRAWL4AI_AVAILABLE else 20
+    worker_threads = 2 if CRAWL4AI_AVAILABLE else 8
     print(f"\n[CHANNEL B & C] Crawling ALL {len(portals)} Company Portals & ATS APIs ({worker_threads} threads, Crawl4AI={CRAWL4AI_AVAILABLE})...")
     total_portal_jobs = 0
     buffer = []
@@ -1548,7 +1548,7 @@ def run_full_sync():
                 buffer = []
                 gc.collect()
 
-            if completed % 150 == 0 or completed == len(portals):
+            if completed % 25 == 0 or completed == len(portals):
                 pct = 20 + int((completed / len(portals)) * 65)
                 print(f" -> Progress: {completed}/{len(portals)} portals | Persisted: {total_portal_jobs} | Elapsed: {int(time.time() - start_time)}s", flush=True)
                 update_sync_state(sync_id, "RUNNING", f"Crawling Portals ({completed}/{len(portals)})", pct, saved_li + total_portal_jobs, saved_li + total_portal_jobs)
