@@ -33,6 +33,16 @@ def check_status():
         cur.execute("SELECT count(*) FROM company_jobs;")
         job_count = cur.fetchone()[0]
         print(f"company_jobs total count: {job_count}")
+
+        cur.execute("SELECT source_channel, count(*) FROM company_jobs GROUP BY source_channel ORDER BY count(*) DESC;")
+        channels = cur.fetchall()
+        print("\nBreakdown by Source Channel:")
+        for ch, cnt in channels:
+            print(f"- {ch}: {cnt} jobs")
+        
+        cur.execute("SELECT count(*) FROM company_jobs WHERE skills_required IS NOT NULL AND skills_required::text != '[]';")
+        skills_cnt = cur.fetchone()[0]
+        print(f"\nJobs with parsed technical skills: {skills_cnt} / {job_count}")
         
         if job_count > 0:
             cur.execute("SELECT company_name, title, location, work_mode, experience_text, source_channel, skills_required, must_have_skills FROM company_jobs ORDER BY created_at DESC LIMIT 3;")

@@ -165,7 +165,12 @@ NON_TECH_PATTERNS = [
     r"\boffice manager\b", r"\bassistant\b", r"\bcustomer support\b", r"\bcall center\b",
     r"\bnurse\b", r"\bphysician\b", r"\bdriver\b", r"\bwarehouse\b", r"\bchronik\b",
     r"\bpanel talk\b", r"\bbilder\b", r"\bpress release\b", r"\bphoto\b",
-    r"\bopportunity at\b", r"\btechnical opportunity at\b", r"^\?lang=", r"\?domain="
+    r"\bopportunity at\b", r"\btechnical opportunity at\b", r"^\?lang=", r"\?domain=",
+    r"\bbiotech\b", r"\bofficer\b", r"\bclinical\b", r"\bpharma\b", r"\bformulation\b",
+    r"\bproduction officer\b", r"\bplant\b", r"\bmanufacturing\b", r"\bcivil\b",
+    r"\bconstruction\b", r"\bmechanical engineer\b", r"\belectrical maintenance\b",
+    r"\bhospital\b", r"\bquality control\b", r"\bqc officer\b", r"\bqa officer\b",
+    r"\boperator\b", r"\btechnician\b"
 ]
 
 def is_valid_tech_title(title, url=""):
@@ -688,8 +693,9 @@ def crawl_linkedin(max_ai_enrich=100):
             if recruiter_m:
                 recruiter_contact = f"Recruiter: {recruiter_m.group(1).strip()}"
 
-        if not full_desc:
-            full_desc = f"Role: {card['title']} at {card['company_name']}. Sourced from LinkedIn search query: {card['keyword']}."
+        # STRICT AUTHENTICITY GATE: Discard if real JD body was not fetched (no guessing/placeholders)
+        if not full_desc or len(full_desc) < 250 or "Sourced from LinkedIn search query" in full_desc:
+            continue
 
         # AI Extraction for up to max_ai_enrich jobs
         m_s, n_s = [], []
@@ -791,8 +797,8 @@ def crawl_ats(company_slug, company_name, base_url, ats_type):
                             raw_desc = "\n\n".join(parts)
                         except Exception:
                             pass
-                    if not raw_desc:
-                        raw_desc = f"Role: {title} at {company_name}. Requisition ID: {item_id}"
+                    if not raw_desc or len(raw_desc) < 250:
+                        continue
 
                     min_e, max_e = parse_exp(raw_desc + " " + title)
                     m_s, n_s, all_s = segregate_skills(title, raw_desc)
@@ -838,7 +844,9 @@ def crawl_ats(company_slug, company_name, base_url, ats_type):
                     if not is_tech:
                         continue
                     content = sanitize_str(item.get("content", ""))
-                    clean_desc = re.sub(r'<[^>]+>', ' ', content)[:3000] if content else f"Role: {title} at {company_name}."
+                    if not content or len(content) < 250:
+                        continue
+                    clean_desc = re.sub(r'<[^>]+>', ' ', content)[:3500]
                     min_e, max_e = parse_exp(clean_desc + " " + title)
                     m_s, n_s, all_s = segregate_skills(title, clean_desc)
                     jobs.append({
@@ -874,6 +882,8 @@ def crawl_ats(company_slug, company_name, base_url, ats_type):
                     loc = cats.get("location", "India / Remote")
                     url = item.get("hostedUrl", base_url)
                     desc = sanitize_str(item.get("descriptionPlain", "") or item.get("description", ""))
+                    if not desc or len(desc) < 250:
+                        continue
                     eligible, work_mode, clean_loc = is_india_eligible(loc, title, url)
                     if not eligible:
                         continue
@@ -920,7 +930,11 @@ def crawl_ats(company_slug, company_name, base_url, ats_type):
                     if not is_tech:
                         continue
                     desc_html = item.get("descriptionHtml") or item.get("descriptionPlain") or ""
-                    clean_desc = re.sub(r'<[^>]+>', ' ', desc_html).strip() if desc_html else f"Role: {title} at {company_name}. Ashby Job Posting."
+                    if not desc_html:
+                        continue
+                    clean_desc = re.sub(r'<[^>]+>', ' ', desc_html).strip()
+                    if len(clean_desc) < 250:
+                        continue
                     min_e, max_e = parse_exp(clean_desc + " " + title)
                     m_s, n_s, all_s = segregate_skills(title, clean_desc)
                     jobs.append({
@@ -945,6 +959,62 @@ def crawl_ats(company_slug, company_name, base_url, ats_type):
 
     return []
 
+def clean_job_description_markdown(text, title="", company=""):
+    """
+    Strips cookie consent notices, language selectors, profile links, top navigation,
+    and footer boilerplate from raw Markdown. Returns clean authentic JD text,
+    or None if the extracted text does not meet the minimum authentic content threshold (250 chars).
+    """
+    if not text:
+        return None
+
+    # Strip multi-line cookie / compliance banners
+    text = re.sub(r'We use cookies.*?(?:Accept All Cookies|Modify Cookie Preferences|Close Preferences|Save Preferences)', '', text, flags=re.DOTALL | re.I)
+    text = re.sub(r'cookies necessary for the website.*?Save Preferences', '', text, flags=re.DOTALL | re.I)
+    text = re.sub(r'By clicking “Accept All Cookies”.*?Cookie Notice', '', text, flags=re.DOTALL | re.I)
+
+    lines = text.split('\n')
+    cleaned_lines = []
+    started = False
+
+    for line in lines:
+        l_str = line.strip()
+        l_low = l_str.lower()
+
+        # Skip leading navigation, language selectors, profile links, cookie notices
+        if not started:
+            if any(l_low.startswith(b) for b in [
+                "[skip to main content", "skip to content", "[language", "language", "modify cookie",
+                "accept all cookies", "[view profile", "view profile", "[candidate login", "candidate login",
+                "[home", "[careers", "[about us", "[our business", "[investors", "[media", "[community",
+                "[sustainability", "[recruitment fraud", "recruitment fraud", "search jobs", "menu",
+                "sign in", "apply now", "share this job", "back to search"
+            ]):
+                continue
+            if re.match(r'^\[\!\[.*\]\]\(.*\)', l_str):  # Linked logo images
+                continue
+            if l_low.startswith("http") or l_low.startswith("www."):
+                continue
+            if l_low in ["language", "careers", "view profile", "candidate login", "search jobs", "menu"]:
+                continue
+            # Content begins at heading or substantive sentence
+            if l_str.startswith("#") or len(l_str) > 25:
+                started = True
+
+        if started:
+            # Stop if footer boilerplate reached
+            if any(l_low.startswith(f) for f in [
+                "privacy policy", "terms of use", "all rights reserved", "equal opportunity employer",
+                "copyright ©", "recruitment fraud alert", "powered by workday", "powered by successfactors"
+            ]):
+                break
+            cleaned_lines.append(line)
+
+    result = '\n'.join(cleaned_lines).strip()
+    if len(result) < 250 or "we use cookies" in result.lower():
+        return None
+    return result
+
 # ---------------------------------------------------------------------------
 # CHANNEL C: COMPANY PORTALS & SITEMAPS
 # ---------------------------------------------------------------------------
@@ -960,11 +1030,11 @@ def fetch_authentic_job_page_content(url, title, company):
         try:
             async def _crawl():
                 async with AsyncWebCrawler(headless=True) as crawler:
-                    res = await crawler.arun(url=url)
+                    res = await crawler.arun(url=url, page_timeout=15000)
                     if res and res.success and res.markdown:
-                        clean_md = res.markdown.strip()
-                        if len(clean_md) > 120:
-                            return clean_md[:4000]
+                        c_md = clean_job_description_markdown(res.markdown.strip(), title, company)
+                        if c_md and len(c_md) >= 250:
+                            return c_md[:3500]
                 return None
             md_res = asyncio.run(_crawl())
             if md_res:
@@ -1156,9 +1226,11 @@ async def crawl_portal_with_crawl4ai_async(portal, max_jobs=None):
                 job_res = await crawler.arun(url=target_url, page_timeout=15000)
                 if not job_res or not job_res.success or not job_res.markdown:
                     continue
-                md_content = job_res.markdown.strip()
-                if len(md_content) < 150:
+                raw_md = job_res.markdown.strip()
+                cleaned_md = clean_job_description_markdown(raw_md, target_title, company)
+                if not cleaned_md or len(cleaned_md) < 250:
                     continue
+                md_content = cleaned_md
 
                 # Refine title from h1 if present
                 h1_m = re.search(r'^#\s+([^\n]+)', md_content, re.MULTILINE)
@@ -1274,7 +1346,9 @@ def crawl_portal_and_sitemap(portal):
                     if not eligible:
                         continue
                     actual_desc = fetch_authentic_job_page_content(u_clean, clean_title, company)
-                    raw_desc = actual_desc if actual_desc else f"Role: {clean_title} at {company}. Direct URL: {u_clean}"
+                    if not actual_desc or len(actual_desc) < 250:
+                        continue
+                    raw_desc = actual_desc
                     min_e, max_e = parse_exp(raw_desc + " " + clean_title)
                     m_s, n_s, all_s = segregate_skills(clean_title, raw_desc)
                     sitemap_jobs.append({
@@ -1320,7 +1394,9 @@ def crawl_portal_and_sitemap(portal):
             if not eligible:
                 continue
             actual_desc = fetch_authentic_job_page_content(j_link, clean_title, company)
-            raw_desc = actual_desc if actual_desc else f"Role: {clean_title} at {company}. URL: {j_link}"
+            if not actual_desc or len(actual_desc) < 250:
+                continue
+            raw_desc = actual_desc
             min_e, max_e = parse_exp(raw_desc + " " + clean_title)
             m_s, n_s, all_s = segregate_skills(clean_title, raw_desc)
             html_jobs.append({

@@ -45,8 +45,34 @@ class JobDescriptionFormatter:
 
         # Step 3: Normalize whitespace and excessive newlines
         lines = [line.rstrip() for line in text.split("\n")]
-        normalized = "\n".join(lines)
-        normalized = re.sub(r"\n{3,}", "\n\n", normalized).strip()
+        
+        # Step 4: Strip leading cookie banners and navigation boilerplate
+        cleaned_lines = []
+        started = False
+        for line in lines:
+            l_str = line.strip()
+            l_low = l_str.lower()
+            if not started:
+                if any(l_low.startswith(b) for b in [
+                    "we use cookies", "this website uses cookies", "modify cookie", "accept all cookies",
+                    "[skip to main content", "skip to main content", "[language", "language",
+                    "[view profile", "view profile", "[candidate login", "candidate login",
+                    "[careers", "[about us", "[investors", "[media", "[sustainability",
+                    "[recruitment fraud", "recruitment fraud"
+                ]):
+                    continue
+                if re.match(r'^\[\!\[.*\]\]\(.*\)', l_str):
+                    continue
+                if l_low in ["language", "careers", "view profile", "candidate login", "search jobs", "menu"]:
+                    continue
+                if l_str.startswith("#") or len(l_str) > 25:
+                    started = True
+            
+            if started:
+                cleaned_lines.append(line)
+
+        text_to_norm = "\n".join(cleaned_lines) if cleaned_lines else "\n".join(lines)
+        normalized = re.sub(r"\n{3,}", "\n\n", text_to_norm).strip()
         return normalized
 
     @classmethod
@@ -67,13 +93,14 @@ class JobDescriptionFormatter:
 
         cleaned = cls.clean_raw_html(raw_desc)
 
-        # Check if text is a generic catalog placeholder
+        # Check if text is a generic catalog placeholder or feed query stub
         is_generic_placeholder = any(
             k in cleaned.lower()
             for k in [
                 "active opportunity for",
                 "monitored across official career portal",
-                "target active opportunity for"
+                "target active opportunity for",
+                "sourced from linkedin search query"
             ]
         )
 
